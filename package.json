@@ -1,0 +1,27 @@
+{
+  "name": "optimus-ai-agent",
+  "version": "1.0.0",
+  "description": "Local RAG-based coding assistant powered by Ollama + ChromaDB",
+  "type": "module",
+  "main": "src/cli/index.ts",
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "index": "tsx src/indexer/indexer.ts",
+    "build": "tsc",
+    "start": "node dist/cli/index.js"
+  },
+  "dependencies": {
+    "@langchain/community": "^0.3.0",
+    "@langchain/core": "^1.1.40",
+    "@langchain/ollama": "^0.2.0",
+    "chokidar": "^3.6.0",
+    "chromadb": "^1.9.2",
+    "dotenv": "^16.4.5",
+    "langchain": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
