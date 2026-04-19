@@ -1,5 +1,5 @@
 import readline from "readline";
-import { ask } from "../agent/agent.js";
+import { streamAnswer } from "../agent/agent.js";
 import { indexProject } from "../indexer/indexer.js";
 import { watchProject } from "../indexer/watcher.js";
 import { config } from "../config.js";
@@ -28,16 +28,14 @@ async function main() {
     if (query.trim().toLowerCase() === "exit") break;
     if (!query.trim()) continue;
 
-    const mode = /\b(function|class|bug|code|implement|refactor)\b/i.test(query) ? "code" : "general";
     try {
-      const response = await ask(query, mode);
-      console.log(`\nOptimus [${response.model}]: ${response.answer}`);
-      if (response.sources.length) {
-        console.log(`Sources: ${response.sources.join(", ")}`);
+      process.stdout.write("\nOptimus: ");
+      for await (const token of streamAnswer(query)) {
+        process.stdout.write(token);
       }
-      console.log();
+      console.log("\n");
     } catch (err) {
-      console.error("Error:", err);
+      console.error("\nError:", err instanceof Error ? err.message : err);
     }
   }
 

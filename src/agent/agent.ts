@@ -1,25 +1,23 @@
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { retrieve } from "../retriever/retriever.js";
-import { getLLM } from "../llm/llmClient.js";
+import { getContext } from "../retriever/index.js";
+import { queryLLM } from "../llm/index.js";
+import { generateResponse } from "../llm/ollamaClient.js";
+import { detectQueryType, getModel } from "../llm/modelRouter.js";
+import { buildSystemPrompt, buildUserPrompt } from "../llm/promptBuilder.js";
 import type { AgentResponse } from "../types.js";
 
-export async function ask(query: string, mode: "general" | "code" = "code"): Promise<AgentResponse> {
-  const results = await retrieve(query);
-  const context = results
-    .map((r) => `// ${r.filePath}\n${r.content}`)
-    .join("\n\n---\n\n");
+export async function* streamAnswer(query: string): AsyncGenerator<string> {
+  const context = await getContext(query);
+  yield* queryLLM(query, context);
+}
 
-  const llm = getLLM(mode);
-  const response = await llm.invoke([
-    new SystemMessage(
-      `You are Optimus, a local AI coding assistant. Use the following codebase context to answer:\n\n${context}`
-    ),
-    new HumanMessage(query),
-  ]);
+export async function ask(query: string): Promise<AgentResponse> {
+  const context = await getContext(query);
+  const type = detectQueryType(query);
+  const model = getModel(type);
+  const answer = await generateResponse(buildSystemPrompt(context), buildUserPrompt(query), model);
 
-  return {
-    answer: String(response.content),
-    sources: [...new Set(results.map((r) => r.filePath))],
-    model: mode === "code" ? "codellama:7b" : "gemma:2b",
-  };
+  // Extract source file paths from context XML
+  const sources = [...context.matchAll(/path="([^"]+)"/g)].map((m) => m[1]!);
+
+  return { answer, sources: [...new Set(sources)], model };
 }

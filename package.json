@@ -5,10 +5,11 @@
   "type": "module",
   "main": "src/cli/index.ts",
   "scripts": {
-    "dev": "tsx src/cli/index.ts",
-    "index": "tsx src/indexer/indexer.ts",
+    "dev": "tsx src/index.ts",
+    "index": "tsx src/index.ts --index",
+    "watch": "tsx src/index.ts --watch",
     "build": "tsc",
-    "start": "node dist/cli/index.js"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@langchain/community": "^0.3.0",
