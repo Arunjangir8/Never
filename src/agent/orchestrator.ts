@@ -61,11 +61,16 @@ export async function runQuery(userQuery: string): Promise<void> {
     return;
   }
 
-  const sources = [...new Set([...context.matchAll(/path="([^"]+)"/g)].map((m) => m[1]!))];
+  // Extract sources from JSON context
+  let sources: string[] = [];
+  try {
+    const parsed = JSON.parse(context) as { files?: Array<{ path: string }> };
+    sources = [...new Set((parsed.files ?? []).map((f) => f.path))];
+  } catch { /* context parse failed, sources stays empty */ }
   if (sources.length > 0) printSources(sources);
   printSeparator();
 
-  // 2. LLM — stream response using user query + retrieved file context (gemma:2b)
+  // 2. LLM — stream response using user query + retrieved file context
   process.stdout.write("\n\x1b[1mOptimus:\x1b[0m ");
   const type = detectQueryType(userQuery);
   const model = getModel(type);
@@ -86,18 +91,15 @@ export async function runQuery(userQuery: string): Promise<void> {
   // General queries end here — no file updates
   if (type === "general") return;
 
-  // 3. DETECT INTENT — does the response want to update a file?
-  //    Priority: heuristics (fast) → LLM-parsed structured updates
-  let updates: CodeUpdate[] =
-    (await tryHeuristicRemoveComments(userQuery, sources)) ||
-    (await tryHeuristicUpdate(userQuery, sources)) ||
-    parseUpdates(fullResponse, userQuery, sources);
+  // 3. DETECT INTENT — heuristics first, then LLM-parsed structured updates
+  // Note: must use explicit .length checks — empty arrays are truthy in JS
+  let updates = await tryHeuristicRemoveComments(userQuery, sources);
+  if (updates.length === 0) updates = await tryHeuristicUpdate(userQuery, sources);
+  if (updates.length === 0) updates = parseUpdates(fullResponse, userQuery, sources);
 
-  // 4a. FILE UPDATE PATH — apply updates directly
+  // 4. FILE UPDATE PATH — apply updates directly
   if (updates.length > 0) {
     await applyAllUpdates(updates);
     console.log("\n\x1b[32m✓ Changes applied successfully.\x1b[0m");
-    return;
   }
-
 }
