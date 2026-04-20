@@ -4,6 +4,7 @@ import { mkdir } from "fs/promises";
 import { showDiff, summarizeDiff } from "./differ.js";
 import { askConfirmation } from "./confirmationPrompt.js";
 import type { CodeUpdate } from "../types.js";
+import { config } from "../config.js";
 
 const G = "\x1b[32m";
 const DIM = "\x1b[2m";
@@ -13,45 +14,26 @@ function bakPath(filePath: string): string {
   return `${filePath}.optimus.bak`;
 }
 
-// Attempt targeted replacement: find the first function/class block in newContent
-// and replace its counterpart in the original. Falls back to full overwrite.
-function targetedReplace(original: string, newContent: string): string {
-  // Extract the first top-level identifier from newContent (function/class/const name)
-  const sigRe = /^(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+(\w+)/m;
-  const sig = sigRe.exec(newContent);
-  if (!sig) return newContent; // no recognisable signature → full replace
-
-  const name = sig[1]!;
-  // Build a regex that matches the same declaration block in the original
-  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const blockRe = new RegExp(
-    `((?:export\\s+)?(?:async\\s+)?(?:function|class|const|let|var)\\s+${escapedName}[\\s\\S]*?)` +
-      `(?=\\n(?:export\\s+)?(?:async\\s+)?(?:function|class|const|let|var)\\s+\\w|$)`,
-    "m"
-  );
-
-  if (blockRe.test(original)) {
-    return original.replace(blockRe, newContent);
-  }
-  return newContent; // identifier not found → full replace
-}
-
 export async function applyUpdate(update: CodeUpdate): Promise<void> {
   let original: string | null = null;
   try {
     original = await readFile(update.filePath, "utf-8");
   } catch {
+    if (!config.allowNewFiles) {
+      console.log(`\x1b[33m⚠ Skipped new file (ALLOW_NEW_FILES=false): ${update.filePath}\x1b[0m`);
+      return;
+    }
     // New file — ensure directory exists
     await mkdir(dirname(update.filePath), { recursive: true });
   }
 
-  const finalContent =
-    original !== null ? targetedReplace(original, update.newContent) : update.newContent;
+  const finalContent = update.newContent;
 
   if (original !== null) {
-    // Backup before writing
-    await copyFile(update.filePath, bakPath(update.filePath));
-    console.log(`${DIM}  Backup saved: ${bakPath(update.filePath)}${RESET}`);
+    if (config.backupBeforeWrite) {
+      await copyFile(update.filePath, bakPath(update.filePath));
+      console.log(`${DIM}  Backup saved: ${bakPath(update.filePath)}${RESET}`);
+    }
     console.log(`  ${summarizeDiff(original, finalContent)}`);
   }
 

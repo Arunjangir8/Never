@@ -1,7 +1,7 @@
 import { ChatOllama } from "@langchain/ollama";
 
 const llm = new ChatOllama({
-  model: "gemma:2b",
+  model: "gemma:9b",
   baseUrl: "http://127.0.0.1:11434",
 });
 

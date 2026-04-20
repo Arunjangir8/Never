@@ -8,8 +8,10 @@ function requireEnv(key: string): string {
 
 export const config = {
   ollamaBaseUrl: process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
-  chromaUrl: process.env["CHROMA_URL"] ?? "http://localhost:8000",
+  chromaUrl: process.env["CHROMA_URL"] ?? "http://localhost:8201",
   projectPath: process.env["PROJECT_PATH"] ?? "./my-project",
+  allowNewFiles: (process.env["ALLOW_NEW_FILES"] ?? "false").toLowerCase() === "true",
+  backupBeforeWrite: (process.env["BACKUP_BEFORE_WRITE"] ?? "false").toLowerCase() === "true",
   generalModel: process.env["GENERAL_MODEL"] ?? "gemma:2b",
   codeModel: process.env["CODE_MODEL"] ?? "codellama:7b",
   embedModel: process.env["EMBED_MODEL"] ?? "nomic-embed-text",
