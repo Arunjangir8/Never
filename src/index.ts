@@ -4,6 +4,7 @@ import { printBanner, printError, printSuccess, printSeparator } from "./cli/dis
 import { indexProject } from "./indexer/indexer.js";
 import { watchProject } from "./indexer/watcher.js";
 import { startRepl } from "./cli/repl.js";
+import { folderFileHandler } from "./utils/folderFileHandler.js";
 
 async function checkService(url: string, name: string): Promise<boolean> {
   try {
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
 
   if (mode === "--index") {
     await indexProject(config.projectPath);
+    console.log(folderFileHandler.getFolderStructure());
     process.exit(0);
   }
 
