@@ -8,16 +8,17 @@ export async function getContext(query: string): Promise<string> {
   const directFiles = await detectFilePaths(query, config.projectPath);
 
   if (directFiles.length > 0) {
-    const snippets = directFiles.map(
-      (f) =>
-        `  <file path="${f.filePath}" source="direct">\n` +
-        `    <![CDATA[\n${f.content}\n    ]]>\n` +
-        `  </file>`
-    );
-    return `<context>\n${snippets.join("\n")}\n</context>\n\n<query>${query}</query>`;
+    const chunks = directFiles.map((f) => ({
+      filePath: f.filePath,
+      content: f.content,
+      score: 1,
+      startLine: 0,
+      endLine: 0,
+    }));
+    return buildContext(chunks, query);
   }
 
-  // 2. Fall back to vector search + context builder
+  // 2. Fall back to vector search
   const chunks = await retrieveChunks(query);
   return buildContext(chunks, query);
 }

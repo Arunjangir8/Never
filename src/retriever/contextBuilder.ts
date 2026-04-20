@@ -11,7 +11,6 @@ interface MergedChunk {
 }
 
 function mergeOverlapping(results: QueryResult[]): MergedChunk[] {
-  // Group by file
   const byFile = new Map<string, QueryResult[]>();
   for (const r of results) {
     const existing = byFile.get(r.filePath) ?? [];
@@ -22,7 +21,6 @@ function mergeOverlapping(results: QueryResult[]): MergedChunk[] {
   const merged: MergedChunk[] = [];
 
   for (const [filePath, chunks] of byFile) {
-    // Sort by startLine to merge overlapping ranges
     const sorted = [...chunks].sort((a, b) => a.startLine - b.startLine);
     const groups: QueryResult[][] = [];
     let current: QueryResult[] = [sorted[0]!];
@@ -42,8 +40,7 @@ function mergeOverlapping(results: QueryResult[]): MergedChunk[] {
     for (const group of groups) {
       const lines = new Map<number, string>();
       for (const chunk of group) {
-        const chunkLines = chunk.content.split("\n");
-        chunkLines.forEach((line, idx) => {
+        chunk.content.split("\n").forEach((line, idx) => {
           lines.set(chunk.startLine + idx, line);
         });
       }
@@ -64,19 +61,24 @@ function mergeOverlapping(results: QueryResult[]): MergedChunk[] {
 export function buildContext(results: QueryResult[], userQuery: string): string {
   const merged = mergeOverlapping(results);
 
-  const snippets: string[] = [];
+  const files: object[] = [];
   let usedChars = 0;
 
   for (const chunk of merged) {
-    const snippet =
-      `  <file path="${chunk.filePath}" lines="${chunk.startLine}-${chunk.endLine}" score="${chunk.score.toFixed(3)}">\n` +
-      `    <![CDATA[\n${chunk.content}\n    ]]>\n` +
-      `  </file>`;
+    const entry = {
+      path: chunk.filePath,
+      ...(chunk.startLine !== 0 || chunk.endLine !== 0
+        ? { lines: `${chunk.startLine}-${chunk.endLine}` }
+        : {}),
+      score: parseFloat(chunk.score.toFixed(3)),
+      content: chunk.content,
+    };
 
-    if (usedChars + snippet.length > MAX_CHARS) break;
-    snippets.push(snippet);
-    usedChars += snippet.length;
+    const entryStr = JSON.stringify(entry);
+    if (usedChars + entryStr.length > MAX_CHARS) break;
+    files.push(entry);
+    usedChars += entryStr.length;
   }
 
-  return `<context>\n${snippets.join("\n")}\n</context>\n\n<query>${userQuery}</query>`;
+  return JSON.stringify({ query: userQuery, files }, null, 2);
 }

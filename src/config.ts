@@ -17,4 +17,5 @@ export const config = {
   embedModel: process.env["EMBED_MODEL"] ?? "nomic-embed-text",
   collectionName: process.env["COLLECTION_NAME"] ?? "optimus_codebase",
   topK: parseInt(process.env["TOP_K"] ?? "5", 10),
+  apiKey: process.env["OPENAI_API_KEY"] ?? process.env["GEMINI_API_KEY"] ?? "",
 } as const;
