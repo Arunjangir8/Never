@@ -4,3 +4,4 @@ build/
 /*.env
 /*.env.example
 friction-less-experience-backend
+my-project/
