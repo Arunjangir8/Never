@@ -13,7 +13,7 @@ export const config = {
   allowNewFiles: (process.env["ALLOW_NEW_FILES"] ?? "false").toLowerCase() === "true",
   backupBeforeWrite: (process.env["BACKUP_BEFORE_WRITE"] ?? "false").toLowerCase() === "true",
   generalModel: process.env["GENERAL_MODEL"] ?? "gemma:2b",
-  codeModel: process.env["CODE_MODEL"] ?? "codellama:7b",
+  codeModel: process.env["CODE_MODEL"] ?? "codellama:7b-instruct",
   embedModel: process.env["EMBED_MODEL"] ?? "nomic-embed-text",
   collectionName: process.env["COLLECTION_NAME"] ?? "optimus_codebase",
   topK: parseInt(process.env["TOP_K"] ?? "5", 10),
