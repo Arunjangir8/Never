@@ -3,10 +3,8 @@ import { detectQueryType, getModel } from "../llm/modelRouter.js";
 import { buildSystemPrompt, buildGeneralSystemPrompt, buildUserPrompt } from "../llm/promptBuilder.js";
 import { streamResponse } from "../llm/ollamaClient.js";
 import { parseUpdates } from "./updateParser.js";
-import { applyAllUpdates } from "./patcher.js";
 import { printSources, printSeparator, printError } from "../cli/display.js";
-import { readFile } from "fs/promises";
-import type { CodeUpdate } from "../types.js";
+import { folderFileHandler } from "../utils/folderFileHandler.js";
 
 // ─── Main Orchestrator ────────────────────────────────────────────────────────
 
@@ -36,7 +34,7 @@ export async function runQuery(userQuery: string): Promise<void> {
 
   const type = detectQueryType(userQuery);
   const model = getModel(type);
-  // const { type, model } = await getModel(userQuery);
+  // const { type, model } = await getModel(userQuery); -- uncomment if you want dynamic model selection based on query type
 
   const systemPrompt =
     type === "general"
@@ -63,14 +61,25 @@ export async function runQuery(userQuery: string): Promise<void> {
   // General queries end here — no file updates
   if (type === "general") return;
 
-  // 3. DETECT INTENT — heuristics first, then LLM-parsed structured updates
-  // Note: must use explicit .length checks — empty arrays are truthy in JS
+  // 3. PARSE — extract structured updates from LLM response
+  const updates = parseUpdates(fullResponse);
+  if (updates.length === 0) return;
 
-  const updates = parseUpdates(fullResponse, userQuery, sources);
-
-  // 4. FILE UPDATE PATH — apply updates directly
-  if (updates.length > 0) {
-    await applyAllUpdates(updates);
-    console.log("\n\x1b[32m✓ Changes applied successfully.\x1b[0m");
+  // 4. APPLY — route each update to fullfile or patchs handler
+  for (const update of updates) {
+    console.log(`\n── ${update.summary}`);
+    try {
+      if (update.type === "fullfile") {
+        folderFileHandler.updateFile(update.relativePath, update.content);
+        console.log(`\x1b[32m✔ fullfile applied: ${update.relativePath}\x1b[0m`);
+      } else {
+        folderFileHandler.applyPatches(update.relativePath, update.patches);
+        console.log(`\x1b[32m✔ ${update.patches.length} patch(es) applied: ${update.relativePath}\x1b[0m`);
+      }
+    } catch (err) {
+      printError(`Failed on ${update.relativePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+
+  console.log("\n\x1b[32m✓ All changes applied successfully.\x1b[0m");
 }

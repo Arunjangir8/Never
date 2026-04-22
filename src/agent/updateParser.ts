@@ -1,117 +1,200 @@
 import path from "path";
-import { existsSync } from "fs";
 import { config } from "../config.js";
-import type { CodeUpdate } from "../types.js";
 
-function sanitizeContent(content: string): string {
-  let out = content.trim();
-  out = out.replace(/^```\w*\n/, "").replace(/\n```$/, "").trim();
-  if (/<\s*complete\s+updated\s+file\s+content/i.test(out)) return "";
-  if (/complete\s+updated\s+function\s+block/i.test(out) && out.length < 120) return "";
-  return out;
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export type PatchEntry = {
+  lineFrom: number;
+  lineTo: number;
+  patch: string;
+};
+
+export type FileUpdate =
+  | { type: "fullfile"; relativePath: string; content: string; summary: string }
+  | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string };
+
+// ── Sanitizers ────────────────────────────────────────────────────────────────
+
+// Fix 1: Replace backtick template literals with proper JSON double-quoted strings
+function replaceBackticks(text: string): string {
+  return text.replace(/`([\s\S]*?)`/g, (_, inner: string) => {
+    const escaped = inner
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\t/g, "\\t");
+    return `"${escaped}"`;
+  });
 }
+
+// Fix 2: Escape unescaped newlines/tabs inside JSON string values
+function sanitizeJson(text: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === "\\" && inString) { result += ch; escaped = true; continue; }
+    if (ch === '"') { inString = !inString; result += ch; continue; }
+
+    if (inString) {
+      if (ch === "\n") { result += "\\n"; continue; }
+      if (ch === "\r") { result += "\\r"; continue; }
+      if (ch === "\t") { result += "\\t"; continue; }
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+// ── JSON Parser ───────────────────────────────────────────────────────────────
 
 function tryParseJson(text: string): unknown | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // Plain JSON object
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try { return JSON.parse(trimmed); } catch { /* continue */ }
-  }
+  const candidates: string[] = [];
 
-  // Fenced JSON block (model ignored the no-fence rule)
-  const fence = trimmed.match(/```json\s*([\s\S]*?)\s*```/i) ?? trimmed.match(/```\s*([\s\S]*?)\s*```/i);
-  if (fence?.[1]) {
-    try { return JSON.parse(fence[1]); } catch { /* continue */ }
-  }
+  const fence =
+    trimmed.match(/```json\s*([\s\S]*?)\s*```/i) ??
+    trimmed.match(/```\s*([\s\S]*?)\s*```/i);
+  if (fence?.[1]) candidates.push(fence[1]);
 
-  // JSON embedded in prose — find first balanced { }
-  let start = -1, depth = 0, inString = false, escaped = false;
-  for (let i = 0; i < trimmed.length; i++) {
-    const ch = trimmed[i]!;
-    if (inString) {
-      if (escaped) { escaped = false; continue; }
-      if (ch === "\\") { escaped = true; continue; }
-      if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') { inString = true; continue; }
-    if (ch === "{") { if (depth === 0) start = i; depth++; }
-    if (ch === "}") {
-      if (depth === 0) continue;
-      if (--depth === 0 && start >= 0) {
-        try { return JSON.parse(trimmed.slice(start, i + 1)); } catch { break; }
-      }
+  if (trimmed.startsWith("{")) candidates.push(trimmed);
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
+
+  for (const raw of candidates) {
+    // Try: as-is → backtick-fixed → sanitized → both fixes combined
+    const attempts = [
+      raw,
+      sanitizeJson(raw),
+      replaceBackticks(raw),
+      sanitizeJson(replaceBackticks(raw)),
+    ];
+    for (const attempt of attempts) {
+      try { return JSON.parse(attempt); } catch { /* continue */ }
     }
   }
 
   return null;
 }
 
-function resolveFilePath(rawPath: string, projectRoot: string, projectFolderName: string): string {
-  const cleaned = rawPath.trim().replace(/^['"`]|['"`]$/g, "");
-  if (!cleaned) return "";
+// ── Path Helpers ──────────────────────────────────────────────────────────────
 
+const projectRoot = path.resolve(config.projectPath);
+
+function normalizeRelativePath(p: string): string {
+  const cleaned = p.trim();
+
+  // If absolute path within project root, make it relative
+  if (path.isAbsolute(cleaned) && cleaned.startsWith(projectRoot)) {
+    return path.relative(projectRoot, cleaned);
+  }
+
+  // If absolute but not under root, try to find "my-project/" segment
   if (path.isAbsolute(cleaned)) {
-    if (cleaned.startsWith(projectRoot)) return cleaned;
+    const projectFolderName = path.basename(projectRoot);
     const needle = `/${projectFolderName}/`;
     const idx = cleaned.indexOf(needle);
-    if (idx >= 0) return path.resolve(projectRoot, cleaned.slice(idx + needle.length));
-    return path.resolve(projectRoot, cleaned.replace(/^\/+/, ""));
+    if (idx >= 0) return cleaned.slice(idx + 1); // keep "my-project/..."
   }
 
-  let relative = cleaned.replace(/^\.\//, "").replace(/^\/+/, "");
-  if (relative.startsWith(`${projectFolderName}/`)) relative = relative.slice(projectFolderName.length + 1);
-  return path.resolve(projectRoot, relative);
+  return cleaned;
 }
 
-export function parseUpdates(llmResponse: string, _fallbackText = "", allowedPaths: string[] = []): CodeUpdate[] {
-  const projectRoot = path.resolve(config.projectPath);
-  const projectFolderName = path.basename(projectRoot);
-
-  const normalizedAllowed = new Set(
-    allowedPaths
-      .map((p) => resolveFilePath(p, projectRoot, projectFolderName))
-      .filter(Boolean)
+function isPlaceholderPath(p: string): boolean {
+  return (
+    p.includes("<") ||
+    p === "relative/path/to/file.ts" ||
+    p === "path/to/file.ts" ||
+    p === "<EXACT relative path from context>"
   );
+}
 
-  function isAllowed(filePath: string): boolean {
-    if (!filePath.startsWith(projectRoot)) return false;
-    if (normalizedAllowed.size > 0 && normalizedAllowed.has(filePath)) return true;
-    return existsSync(filePath);
+// ── Single Update Parser ──────────────────────────────────────────────────────
+
+function isFlatUpdate(obj: Record<string, unknown>): boolean {
+  return typeof obj["updateType"] === "string" &&
+    (typeof obj["path"] === "string" || typeof obj["filePath"] === "string");
+}
+
+function parseSingleUpdate(relativePath: string, rec: Record<string, unknown>): FileUpdate | null {
+  const updateType = String(rec["updateType"] ?? "");
+  const summary = String(rec["summary"] ?? `Update ${relativePath}`);
+
+  if (updateType === "fullfile") {
+    const content = String(rec["fullfile"] ?? "").trim();
+    if (!content) { console.warn(`\x1b[33m⚠  Empty fullfile for ${relativePath}\x1b[0m`); return null; }
+    return { type: "fullfile", relativePath, content, summary };
   }
 
+  if (updateType === "patchs") {
+    const raw = rec["patchs"];
+    if (!Array.isArray(raw) || raw.length === 0) { console.warn(`\x1b[33m⚠  Empty patchs for ${relativePath}\x1b[0m`); return null; }
+    const patches: PatchEntry[] = raw
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
+      .map((p) => ({
+        lineFrom: Number(p["lineFrom"]),
+        lineTo: Number(p["lineTo"]),
+        patch: String(p["patch"] ?? ""),
+      }))
+      .filter((p) => p.lineFrom > 0 && p.lineTo >= p.lineFrom);
+    if (patches.length === 0) { console.warn(`\x1b[33m⚠  No valid patches for ${relativePath}\x1b[0m`); return null; }
+    return { type: "patchs", relativePath, patches, summary };
+  }
+
+  console.warn(`\x1b[33m⚠  Unknown updateType "${updateType}" for ${relativePath}\x1b[0m`);
+  return null;
+}
+
+// ── Main Export ───────────────────────────────────────────────────────────────
+
+export function parseUpdates(llmResponse: string): FileUpdate[] {
   const parsed = tryParseJson(llmResponse);
-  if (!parsed || typeof parsed !== "object") {
-    console.warn("\x1b[33m⚠  No JSON detected — LLM gave a general response.\x1b[0m");
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    console.warn("\x1b[33m⚠  No valid JSON detected in LLM response.\x1b[0m");
     return [];
   }
 
   const obj = parsed as Record<string, unknown>;
-  const rawUpdates = Array.isArray(obj["updates"]) ? obj["updates"] : obj["filePath"] ? [obj] : [];
-  const updates: CodeUpdate[] = [];
+  const updates: FileUpdate[] = [];
 
-  for (const item of rawUpdates) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    const filePath = resolveFilePath(String(rec["filePath"] ?? ""), projectRoot, projectFolderName);
-    const newContent = sanitizeContent(String(rec["newContent"] ?? ""));
-    const description = String(rec["description"] ?? `Update ${filePath}`);
+  // Fallback: flat { "path": "...", "updateType": "..." }
+  if (isFlatUpdate(obj)) {
+    const rawPath = String(obj["path"] ?? obj["filePath"] ?? "").trim();
+    const relativePath = normalizeRelativePath(rawPath);
+    if (!relativePath || isPlaceholderPath(relativePath)) {
+      console.warn("\x1b[33m⚠  Flat update has missing or placeholder path.\x1b[0m");
+      return [];
+    }
+    console.warn(`\x1b[33m⚠  LLM used flat format — recovering...\x1b[0m`);
+    const update = parseSingleUpdate(relativePath, obj);
+    if (update) updates.push(update);
+    return updates;
+  }
 
-    if (!filePath || !newContent) continue;
-
-    if (!isAllowed(filePath)) {
-      console.warn(`\x1b[33m⚠  Ignored unsafe target: ${filePath}\x1b[0m`);
+  // Normal: { "my-project/index.ts": { ... } }
+  for (const [rawPath, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (isPlaceholderPath(rawPath)) {
+      console.warn(`\x1b[33m⚠  Skipping placeholder path "${rawPath}"\x1b[0m`);
       continue;
     }
-
-    updates.push({ filePath, newContent, description });
+    const relativePath = normalizeRelativePath(rawPath);
+    const update = parseSingleUpdate(relativePath, value as Record<string, unknown>);
+    if (update) updates.push(update);
   }
 
-  if (updates.length === 0) {
-    console.warn("\x1b[33m⚠  No file updates found in LLM response.\x1b[0m");
-  }
-
+  if (updates.length === 0) console.warn("\x1b[33m⚠  No file updates found in LLM response.\x1b[0m");
   return updates;
 }

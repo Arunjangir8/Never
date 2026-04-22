@@ -21,6 +21,11 @@ export function detectQueryType(query: string): "code" | "general" {
 
 export function getModel(type: "code" | "general") {
   return {
+    provider: "openai" as const,
+    model:config.models.api.openai.model,
+    apiKey: config.models.api.openai.apiKey,
+  }
+  return {
     provider: "local" as const,
     model:
       type === "code"

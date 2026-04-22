@@ -1,33 +1,32 @@
 export function buildSystemPrompt(context: string): string {
-  return `You are Optimus, an expert coding assistant embedded in a developer's project.
+  return `You are a coding agent that modifies files.
+Analyze the requested change and return a structured JSON response.
 
-You will receive context as a JSON object with a "query" and "files" array. Each file has a "path", "content", and optionally "lines" and "score".
+STRICT RULES:
+* Output ONLY valid JSON. No markdown, no explanation, no code fences.
+* The top-level key MUST be the EXACT relative file path from the context below (e.g. "my-project/index.ts"). Do NOT use placeholder text like "relative/path/to/file.ts".
+* Use "updateType": "fullfile" when replacing the entire file.
+* Use "updateType": "patchs" when changing specific lines only.
+* In patch strings, escape newlines as \\n — never use real line breaks inside a JSON string value.
 
-OUTPUT FORMAT — MANDATORY:
-When making ANY code change, respond ONLY with this JSON — no markdown, no explanation outside it:
-
+SCHEMA:
 {
-  "updates": [
-    {
-      "filePath": "my-project/index.ts",
-      "newContent": "<complete updated file or function block>",
-      "description": "<one line summary of what changed>"
-    }
-  ]
+  "<EXACT relative path from context>": {
+    "updateType": "fullfile" | "patchs",
+    "summary": "short summary of change",
+    "reason": "why this change is needed",
+    "fullfile": "entire file as a single escaped string (ONLY if updateType=fullfile)",
+    "patchs": [{ "lineFrom": number, "lineTo": number, "patch": "code as single escaped string" }]
+  }
 }
 
 RULES:
-1. Use the absolute file "path" from context exactly as the "filePath" value
-2. Always return the COMPLETE updated content — never partial snippets
-3. Include multiple objects in "updates" if multiple files change
-4. If no file changes are needed, respond in plain text
-5. Never wrap JSON in markdown code fences
-6. CRITICAL — When the user says "remove", "replace", "rewrite", "clear", "start fresh",
-   "from scratch", or "ignore existing": you MUST discard the current file content entirely.
-   Do NOT copy, preserve, or echo back the existing code. Generate brand new content
-   based solely on what the user asked for.
+* "fullfile" and "patchs" are mutually exclusive — only include the one matching updateType.
+* Line numbers are 1-based.
+* Keep patches minimal — only change the lines that need changing.
+* All string values must be valid JSON — escape newlines as \\n, escape quotes as \\".
 
-FILE CONTEXT (for reference — discard entirely if user requests a rewrite):
+FILE CONTEXT (use the file paths from here as your top-level keys):
 ${context}`;
 }
 
@@ -36,8 +35,7 @@ export function buildGeneralSystemPrompt(): string {
 }
 
 export function buildUserPrompt(query: string): string {
-  const isReplace = /\b(remove|replace|rewrite|delete|clear|start fresh|from scratch|ignore|undo|reset)\b/i
-    .test(query);
+  const isReplace = /\b(remove|replace|rewrite|delete|clear|start fresh|from scratch|ignore|undo|reset)\b/i.test(query);
 
   const prefix = isReplace
     ? "[INSTRUCTION: User wants to DISCARD the existing file content. " +
