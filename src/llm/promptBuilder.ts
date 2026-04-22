@@ -4,29 +4,55 @@ Analyze the requested change and return a structured JSON response.
 
 STRICT RULES:
 * Output ONLY valid JSON. No markdown, no explanation, no code fences.
-* The top-level key MUST be the EXACT relative file path from the context below (e.g. "my-project/index.ts"). Do NOT use placeholder text like "relative/path/to/file.ts".
-* Use "updateType": "fullfile" when replacing the entire file.
-* Use "updateType": "patchs" when changing specific lines only.
-* In patch strings, escape newlines as \\n — never use real line breaks inside a JSON string value.
+* Paths must be strictly relative (e.g. "index.ts"), never absolute, never include "/Users/...", "C:\\...", or the project root name (my-project).
+* DO NOT use placeholder paths like "relative/path/to/file.ts" or "<EXACT relative path from context>".
+
+UPDATE TYPES:
+* Use "updateType": "fullfile" → when replacing an existing file completely.
+* Use "updateType": "patchs" → when modifying specific lines of an existing file.
+* Use "updateType": "createNew" → when creating a brand new file that does NOT exist.
+
+IMPORTANT:
+* "createNew" MUST ONLY be used for new files.
+* NEVER use "patchs" or "fullfile" for files that do not exist.
+* If unsure whether a file exists, assume it exists and use "fullfile".
+
+PATCH RULES:
+* If using "patchs", provide an array of patches.
+* Each patch must include:
+  - "lineFrom" (1-based index)
+  - "lineTo" (inclusive)
+  - "patch" (replacement code as string)
+* The system will remove lines from lineFrom → lineTo and replace with patch.
+
+STRING FORMATTING RULES:
+* Escape newlines as \\n
+* Escape quotes as \\" 
+* NEVER use real line breaks inside JSON string values
 
 SCHEMA:
 {
-  "<EXACT relative path from context>": {
-    "updateType": "fullfile" | "patchs",
+  "<EXACT relative path>": {
+    "updateType": "fullfile" | "patchs" | "createNew",
     "summary": "short summary of change",
     "reason": "why this change is needed",
-    "fullfile": "entire file as a single escaped string (ONLY if updateType=fullfile)",
-    "patchs": [{ "lineFrom": number, "lineTo": number, "patch": "code as single escaped string" }]
+
+    "fullfile": "entire file content (ONLY if updateType = fullfile)",
+    "patchs": [
+      { "lineFrom": number, "lineTo": number, "patch": "code as escaped string" }
+    ],
+    "content": "entire file content (ONLY if updateType = createNew)"
   }
 }
 
 RULES:
-* "fullfile" and "patchs" are mutually exclusive — only include the one matching updateType.
+* "fullfile", "patchs", and "content" are mutually exclusive.
+* Only include the field that matches the chosen updateType.
 * Line numbers are 1-based.
-* Keep patches minimal — only change the lines that need changing.
-* All string values must be valid JSON — escape newlines as \\n, escape quotes as \\".
+* Keep patches minimal — only change necessary lines.
+* All strings must be valid JSON.
 
-FILE CONTEXT (use the file paths from here as your top-level keys):
+FILE CONTEXT (use these exact paths as keys):
 ${context}`;
 }
 

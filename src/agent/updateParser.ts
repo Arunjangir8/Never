@@ -11,7 +11,8 @@ export type PatchEntry = {
 
 export type FileUpdate =
   | { type: "fullfile"; relativePath: string; content: string; summary: string }
-  | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string };
+  | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string }
+  | { type: "createNew"; relativePath: string; content: string; summary: string };
 
 // ── Sanitizers ────────────────────────────────────────────────────────────────
 
@@ -95,17 +96,15 @@ const projectRoot = path.resolve(config.projectPath);
 function normalizeRelativePath(p: string): string {
   const cleaned = p.trim();
 
-  // If absolute path within project root, make it relative
   if (path.isAbsolute(cleaned) && cleaned.startsWith(projectRoot)) {
     return path.relative(projectRoot, cleaned);
   }
 
-  // If absolute but not under root, try to find "my-project/" segment
   if (path.isAbsolute(cleaned)) {
     const projectFolderName = path.basename(projectRoot);
     const needle = `/${projectFolderName}/`;
     const idx = cleaned.indexOf(needle);
-    if (idx >= 0) return cleaned.slice(idx + 1); // keep "my-project/..."
+    if (idx >= 0) return cleaned.slice(idx + 1);
   }
 
   return cleaned;
@@ -130,6 +129,15 @@ function isFlatUpdate(obj: Record<string, unknown>): boolean {
 function parseSingleUpdate(relativePath: string, rec: Record<string, unknown>): FileUpdate | null {
   const updateType = String(rec["updateType"] ?? "");
   const summary = String(rec["summary"] ?? `Update ${relativePath}`);
+
+  if (updateType === "createNew") {
+    const content = String(rec["content"] ?? "").trim();
+    if (!content) {
+      console.warn(`⚠ Empty content for ${relativePath}`);
+      return null;
+    }
+    return { type: "createNew", relativePath, content, summary };
+  }
 
   if (updateType === "fullfile") {
     const content = String(rec["fullfile"] ?? "").trim();

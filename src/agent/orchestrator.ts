@@ -72,9 +72,12 @@ export async function runQuery(userQuery: string): Promise<void> {
       if (update.type === "fullfile") {
         folderFileHandler.updateFile(update.relativePath, update.content);
         console.log(`\x1b[32m✔ fullfile applied: ${update.relativePath}\x1b[0m`);
-      } else {
+      } else if (update.type === "patchs") {
         folderFileHandler.applyPatches(update.relativePath, update.patches);
         console.log(`\x1b[32m✔ ${update.patches.length} patch(es) applied: ${update.relativePath}\x1b[0m`);
+      } else if (update.type === "createNew"){
+        folderFileHandler.createFile(update.relativePath, update.content);
+        console.log(`\x1b[32m✔ file created: ${update.relativePath}\x1b[0m`);
       }
     } catch (err) {
       printError(`Failed on ${update.relativePath}: ${err instanceof Error ? err.message : String(err)}`);

@@ -133,6 +133,17 @@ class FolderFileHandler {
 
     fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
   }
+
+  public createFile(relativePath: string, content: string = ""): void {
+    const filePath = this.resolveSafePath(relativePath);
+
+    if (fs.existsSync(filePath)) {
+      throw new Error("File already exists");
+    }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, "utf-8");
+  }
 }
 
 export const folderFileHandler = new FolderFileHandler();
