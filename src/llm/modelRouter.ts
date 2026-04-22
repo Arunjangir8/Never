@@ -16,58 +16,159 @@ export function detectQueryType(query: string): "code" | "general" {
   const lower = query.toLowerCase();
   if (CODE_SIGNALS.some((s) => lower.includes(s))) return "code";
   if (GENERAL_SIGNALS.some((s) => lower.includes(s))) return "general";
-  return "general"; // default — assume conversation, not a code change
+  return "general";
 }
 
-export function getModel(type: "code" | "general"): string {
-  return type === "code" ? config.codeModel : config.generalModel;
+export function getModel(type: "code" | "general") {
+  return {
+    provider: "local" as const,
+    model:
+      type === "code"
+        ? config.models.local.coding
+        : config.models.local.general,
+  };
 }
-
 
 
 // import { config } from "../config.js";
+// import { generateResponse } from "../llm/ollamaClient.js";
 
-// // ─── LLM Query Type Detection ─────────────────────────────────────────────────
+// type QueryType = "code" | "general";
+// type Provider = "local" | "openai" | "gemini" | "anthropic";
+
+// interface ModelInput {
+//   provider: Provider;
+//   model: string;
+//   apiKey?: string;
+// }
+
 
 // const CLASSIFIER_PROMPT = `You are a query classifier for a coding assistant.
 // Classify the user's query as exactly one of:
-//   "code"    — the user wants to create, edit, fix, refactor, or change code/files
-//   "general" — the user is asking a question, wants an explanation, or is just chatting
+// - "code"
+// - "general"
 
-// Reply with ONLY the word: code
-// Or ONLY the word: general
-// No punctuation. No explanation.`;
+// Reply with ONLY one word.
+// No explanation.`;
 
-// export async function detectQueryType(query: string): Promise<"code" | "general"> {
+// const ROUTER_PROMPT = `You are a model router.
+
+// Choose the best provider for the query.
+
+// Options:
+// - local      → simple, fast tasks
+// - openai     → general chat and coding
+// - gemini     → research and knowledge-heavy queries
+// - anthropic  → deep reasoning and complex tasks
+
+// Reply with ONLY one word:
+// local | openai | gemini | anthropic
+// No explanation.`;
+
+
+// function getRouterLLM(): ModelInput {
+//   return {
+//     provider: "local",
+//     model: config.models.local.general,
+//   };
+// }
+
+// export async function detectQueryType(query: string): Promise<QueryType> {
 //   try {
-//     const res = await fetch(`${config.ollamaBaseUrl}/api/generate`, {
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({
-//         model: config.generalModel,   // use the lighter/faster model
-//         prompt: `${CLASSIFIER_PROMPT}\n\nQuery: ${query}`,
-//         stream: false,
-//       }),
-//     });
+//     const res = await generateResponse(
+//       CLASSIFIER_PROMPT,
+//       `Query: ${query}`,
+//       getRouterLLM()
+//     );
 
-//     if (!res.ok) throw new Error(`Ollama ${res.status}`);
-//     const data = await res.json() as { response: string };
-//     const answer = data.response.trim().toLowerCase().split(/\s+/)[0] ?? "";
+//     const answer = res.trim().toLowerCase().split(/\s+/)[0];
 
 //     if (answer === "code") return "code";
 //     if (answer === "general") return "general";
 
-//     // LLM returned something unexpected — log it and fall back
-//     process.stdout.write(`\x1b[2m[Classifier] Unexpected response: "${answer}" — defaulting to general\x1b[0m\n`);
 //     return "general";
-
-//   } catch (err) {
-//     // If Ollama is down or slow, don't crash — fall back silently
-//     process.stdout.write(`\x1b[2m[Classifier] Failed: ${err instanceof Error ? err.message : err} — defaulting to general\x1b[0m\n`);
+//   } catch {
 //     return "general";
 //   }
 // }
 
-// export function getModel(type: "code" | "general"): string {
-//   return type === "code" ? config.codeModel : config.generalModel;
+// export async function selectProvider(query: string): Promise<Provider> {
+//   try {
+//     const res = await generateResponse(
+//       ROUTER_PROMPT,
+//       `Query: ${query}`,
+//       getRouterLLM()
+//     );
+
+//     const answer = res.trim().toLowerCase().split(/\s+/)[0];
+
+//     if (
+//       answer === "local" ||
+//       answer === "openai" ||
+//       answer === "gemini" ||
+//       answer === "anthropic"
+//     ) {
+//       return answer;
+//     }
+
+//     return "openai";
+//   } catch {
+//     return "openai";
+//   }
+// }
+
+// export function resolveModel(
+//   provider: Provider,
+//   type: QueryType
+// ): ModelInput {
+//   if (provider === "local") {
+//     return {
+//       provider: "local",
+//       model:
+//         type === "code"
+//           ? config.models.local.coding
+//           : config.models.local.general,
+//     };
+//   }
+
+//   if (provider === "openai") {
+//     return {
+//       provider: "openai",
+//       model: config.models.api.openai.model,
+//       apiKey: config.models.api.openai.apiKey,
+//     };
+//   }
+
+//   if (provider === "gemini") {
+//     return {
+//       provider: "gemini",
+//       model: config.models.api.gemini.model,
+//       apiKey: config.models.api.gemini.apiKey,
+//     };
+//   }
+
+//   if (provider === "anthropic") {
+//     return {
+//       provider: "anthropic",
+//       model: config.models.api.anthropic.model,
+//       apiKey: config.models.api.anthropic.apiKey,
+//     };
+//   }
+
+//   return {
+//     provider: "openai",
+//     model: config.models.api.openai.model,
+//     apiKey: config.models.api.openai.apiKey,
+//   };
+// }
+
+// export async function getModel(query: string): Promise<{
+//   type: QueryType;
+//   model: ModelInput;
+// }> {
+//   const type = await detectQueryType(query);
+//   const provider = await selectProvider(query);
+//   const model = resolveModel(provider, type);
+
+//   return { type, model };
 // }

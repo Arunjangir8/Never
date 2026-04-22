@@ -7,7 +7,7 @@ class FolderFileHandler {
   private root: string;
 
   constructor(rootPath: string = ROOT_FOLDER) {
-    this.root = rootPath;
+    this.root = path.resolve(rootPath);
 
     if (!fs.existsSync(this.root)) {
       throw new Error("my-project folder not found");
@@ -15,7 +15,7 @@ class FolderFileHandler {
   }
 
   private resolveSafePath(relativePath: string): string {
-    const fullPath = path.join(this.root, relativePath);
+    const fullPath = path.resolve(this.root, relativePath);
 
     if (!fullPath.startsWith(this.root)) {
       throw new Error("Access outside root is not allowed");
@@ -72,23 +72,16 @@ class FolderFileHandler {
     const fileData = fs.readFileSync(filePath, "utf-8");
     const lines = fileData.split("\n");
 
-    // Convert to 0-based index
     const start = Math.max(startLine - 1, 0);
     const end = Math.min(endLine, lines.length);
 
     return lines.slice(start, end).join("\n");
   }
 
-  public updateFile(
-    relativePath: string,
-    newContent: string
-  ): void {
+  public updateFile(relativePath: string, newContent: string): void {
     const filePath = this.resolveSafePath(relativePath);
 
-    if (!fs.existsSync(filePath)) {
-      throw new Error("File not found");
-    }
-
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, newContent, "utf-8");
   }
 
@@ -107,12 +100,36 @@ class FolderFileHandler {
     const fileData = fs.readFileSync(filePath, "utf-8");
     const lines = fileData.split("\n");
 
-    // Convert to 0-based index
     const start = startLine - 1;
-    const end = endLine;
+    const deleteCount = endLine - startLine + 1;
+    const newLines = newContent.split("\n");
 
-    // Replace lines
-    lines.splice(start, end - start, newContent);
+    lines.splice(start, deleteCount, ...newLines);
+
+    fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
+  }
+
+  public applyPatches(
+    relativePath: string,
+    patches: { lineFrom: number; lineTo: number; patch: string }[]
+  ): void {
+    const filePath = this.resolveSafePath(relativePath);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error("File not found");
+    }
+
+    let lines = fs.readFileSync(filePath, "utf-8").split("\n");
+
+    patches
+      .sort((a, b) => b.lineFrom - a.lineFrom)
+      .forEach(({ lineFrom, lineTo, patch }) => {
+        const start = lineFrom - 1;
+        const deleteCount = lineTo - lineFrom + 1;
+        const newLines = patch.split("\n");
+
+        lines.splice(start, deleteCount, ...newLines);
+      });
 
     fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
   }

@@ -2,7 +2,7 @@ import { OllamaEmbeddings } from "@langchain/ollama";
 import { config } from "../config.js";
 
 const embeddings = new OllamaEmbeddings({
-  model: config.embedModel,
+  model: config.models.local.embedding,
   baseUrl: config.ollamaBaseUrl,
 });
 

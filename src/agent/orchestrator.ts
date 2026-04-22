@@ -33,12 +33,23 @@ export async function runQuery(userQuery: string): Promise<void> {
 
   // 2. LLM — stream response using user query + retrieved file context
   process.stdout.write("\n\x1b[1mOptimus:\x1b[0m ");
-  const type = await detectQueryType(userQuery);
+
+  const type = detectQueryType(userQuery);
   const model = getModel(type);
-  const systemPrompt = type === "general" ? buildGeneralSystemPrompt() : buildSystemPrompt(context);
+  // const { type, model } = await getModel(userQuery);
+
+  const systemPrompt =
+    type === "general"
+      ? buildGeneralSystemPrompt()
+      : buildSystemPrompt(context);
+
   let fullResponse = "";
   try {
-    for await (const token of streamResponse(systemPrompt, buildUserPrompt(userQuery), model)) {
+    for await (const token of streamResponse(
+      systemPrompt,
+      buildUserPrompt(userQuery),
+      model
+    )) {
       process.stdout.write(token);
       fullResponse += token;
     }

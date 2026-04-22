@@ -1,35 +1,81 @@
 import { ChatOllama } from "@langchain/ollama";
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
-function makeClient(model: string): ChatOllama {
-  return new ChatOllama({
-    model,
-    baseUrl: process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
-  });
+type Provider = "local" | "openai" | "gemini" | "anthropic";
+
+interface ModelInput {
+  model: string;
+  provider: Provider;
+  apiKey?: string;
+}
+
+function makeClient(input: ModelInput) {
+  switch (input.provider) {
+    case "local":
+      return new ChatOllama({
+        model: input.model,
+        baseUrl:
+          process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
+      });
+
+    case "openai":
+      return new ChatOpenAI({
+        model: input.model,
+        ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+      });
+
+    case "gemini":
+      return new ChatGoogleGenerativeAI({
+        model: input.model,
+        ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+      });
+
+    case "anthropic":
+      return new ChatAnthropic({
+        model: input.model,
+        ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+      });
+
+    default:
+      throw new Error("Unsupported provider");
+  }
 }
 
 function isConnectionError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes("ECONNREFUSED") || msg.includes("fetch failed") || msg.includes("ENOTFOUND");
+  return (
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("fetch failed") ||
+    msg.includes("ENOTFOUND")
+  );
 }
 
 export async function* streamResponse(
   systemPrompt: string,
   userPrompt: string,
-  model: string
+  input: ModelInput
 ): AsyncGenerator<string> {
-  const client = makeClient(model);
+  const client = makeClient(input);
+
   try {
     const stream = await client.stream([
       new SystemMessage(systemPrompt),
       new HumanMessage(userPrompt),
     ]);
+
     for await (const chunk of stream) {
-      const text = typeof chunk.content === "string" ? chunk.content : "";
+      const text =
+        typeof chunk.content === "string"
+          ? chunk.content
+          : JSON.stringify(chunk.content);
+
       if (text) yield text;
     }
   } catch (err) {
-    if (isConnectionError(err)) {
+    if (input.provider === "local" && isConnectionError(err)) {
       throw new Error("Ollama not running. Start with: ollama serve");
     }
     throw err;
@@ -39,17 +85,21 @@ export async function* streamResponse(
 export async function generateResponse(
   systemPrompt: string,
   userPrompt: string,
-  model: string
+  input: ModelInput
 ): Promise<string> {
-  const client = makeClient(model);
+  const client = makeClient(input);
+
   try {
     const response = await client.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(userPrompt),
     ]);
-    return typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+
+    return typeof response.content === "string"
+      ? response.content
+      : JSON.stringify(response.content);
   } catch (err) {
-    if (isConnectionError(err)) {
+    if (input.provider === "local" && isConnectionError(err)) {
       throw new Error("Ollama not running. Start with: ollama serve");
     }
     throw err;
