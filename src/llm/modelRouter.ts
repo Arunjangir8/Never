@@ -32,6 +32,7 @@ export function getModel(type: "code" | "general") {
 
 // import { config } from "../config.js";
 // import { generateResponse } from "../llm/ollamaClient.js";
+// import { getClassifierPrompt, getRouterPrompt } from "./promptBuilder.js";
 
 // type QueryType = "code" | "general";
 // type Provider = "local" | "openai" | "gemini" | "anthropic";
@@ -42,28 +43,6 @@ export function getModel(type: "code" | "general") {
 //   apiKey?: string;
 // }
 
-
-// const CLASSIFIER_PROMPT = `You are a query classifier for a coding assistant.
-// Classify the user's query as exactly one of:
-// - "code"
-// - "general"
-
-// Reply with ONLY one word.
-// No explanation.`;
-
-// const ROUTER_PROMPT = `You are a model router.
-
-// Choose the best provider for the query.
-
-// Options:
-// - local      → simple, fast tasks
-// - openai     → general chat and coding
-// - gemini     → research and knowledge-heavy queries
-// - anthropic  → deep reasoning and complex tasks
-
-// Reply with ONLY one word:
-// local | openai | gemini | anthropic
-// No explanation.`;
 
 
 // function getRouterLLM(): ModelInput {
@@ -76,7 +55,7 @@ export function getModel(type: "code" | "general") {
 // export async function detectQueryType(query: string): Promise<QueryType> {
 //   try {
 //     const res = await generateResponse(
-//       CLASSIFIER_PROMPT,
+//       getClassifierPrompt(),
 //       `Query: ${query}`,
 //       getRouterLLM()
 //     );
@@ -95,7 +74,7 @@ export function getModel(type: "code" | "general") {
 // export async function selectProvider(query: string): Promise<Provider> {
 //   try {
 //     const res = await generateResponse(
-//       ROUTER_PROMPT,
+//       getRouterPrompt(),
 //       `Query: ${query}`,
 //       getRouterLLM()
 //     );

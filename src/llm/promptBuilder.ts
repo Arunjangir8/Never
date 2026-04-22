@@ -47,3 +47,29 @@ export function buildUserPrompt(query: string): string {
 
   return `${prefix}${query}`;
 }
+
+export function getClassifierPrompt() {
+  return `You are a query classifier for a coding assistant.
+    Classify the user's query as exactly one of:
+    - "code"
+    - "general"
+
+    Reply with ONLY one word.
+    No explanation.`
+}
+
+export function getRouterPrompt() {
+  return `You are a model router.
+
+      Choose the best provider for the query.
+
+      Options:
+      - local      → simple, fast tasks
+      - openai     → general chat and coding
+      - gemini     → research and knowledge-heavy queries
+      - anthropic  → deep reasoning and complex tasks
+
+      Reply with ONLY one word:
+      local | openai | gemini | anthropic
+      No explanation.`
+}
