@@ -18,7 +18,6 @@ const HELP = `
   /exit               Exit Optimus
 `;
 
-// Callback injected by the REPL to clear its history
 let clearHistoryFn: (() => void) | null = null;
 export function registerClearHistory(fn: () => void): void {
   clearHistoryFn = fn;

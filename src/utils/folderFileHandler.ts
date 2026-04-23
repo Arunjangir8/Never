@@ -18,6 +18,8 @@ class FolderFileHandler {
     const fullPath = path.resolve(this.root, relativePath);
 
     if (!fullPath.startsWith(this.root)) {
+      console.error(`Attempted access outside root: ${fullPath}`);
+      console.error(`Root path: ${this.root}`);
       throw new Error("Access outside root is not allowed");
     }
 

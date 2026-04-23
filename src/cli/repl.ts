@@ -34,11 +34,9 @@ export async function startRepl(): Promise<void> {
     const input = line.trim();
     if (!input) { rl.prompt(); continue; }
 
-    // Slash commands
     const wasCommand = await handleCommand(input);
     if (wasCommand) { rl.prompt(); continue; }
 
-    // Regular query — append user turn to history
     history.push({ role: "user", content: input });
     if (history.length > MAX_HISTORY * 2) history.splice(0, 2);
 

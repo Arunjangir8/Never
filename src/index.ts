@@ -63,7 +63,6 @@ async function main(): Promise<void> {
   if (mode === "--watch") {
     await indexProject(config.projectPath);
     watchProject(config.projectPath);
-    // Keep process alive — watcher holds the event loop
     return;
   }
 

@@ -49,7 +49,7 @@ export function spinner(message: string): { stop: () => void } {
   return {
     stop: () => {
       clearInterval(id);
-      process.stdout.write("\r\x1b[2K"); // clear line
+      process.stdout.write("\r\x1b[2K");
     },
   };
 }

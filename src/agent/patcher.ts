@@ -10,8 +10,6 @@ const G = "\x1b[32m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
-// ── Diff ──────────────────────────────────────────────────────────────────────
-
 type Op = { type: "eq" | "add" | "del"; line: string };
 
 function diffLines(a: string[], b: string[]): Op[] {
@@ -61,7 +59,6 @@ function summarizeDiff(original: string, updated: string): string {
   return `${ops.filter((o) => o.type === "add").length} lines added, ${ops.filter((o) => o.type === "del").length} lines removed`;
 }
 
-// ── Patcher ───────────────────────────────────────────────────────────────────
 
 function bakPath(filePath: string): string { return `${filePath}.optimus.bak`; }
 
