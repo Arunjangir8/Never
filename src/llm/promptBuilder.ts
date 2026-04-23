@@ -3,56 +3,62 @@ export function buildSystemPrompt(context: string): string {
 Analyze the requested change and return a structured JSON response.
 
 STRICT RULES:
-* Output ONLY valid JSON. No markdown, no explanation, no code fences.
-* Paths must be strictly relative (e.g. "index.ts"), never absolute, never include "/Users/...", "C:\\...", or the project root name (my-project).
-* DO NOT use placeholder paths like "relative/path/to/file.ts" or "<EXACT relative path from context>".
+- Output ONLY valid JSON. No markdown, no explanation.
+- Paths must be strictly relative (e.g. "index.ts")
 
 UPDATE TYPES:
-* Use "updateType": "fullfile" → when replacing an existing file completely.
-* Use "updateType": "patchs" → when modifying specific lines of an existing file.
-* Use "updateType": "createNew" → when creating a brand new file that does NOT exist.
+- "fullfile" → replace entire file
+- "patchs" → modify specific parts using find/replace
+- "createNew" → create new file
 
 IMPORTANT:
-* "createNew" MUST ONLY be used for new files.
-* NEVER use "patchs" or "fullfile" for files that do not exist.
-* If unsure whether a file exists, assume it exists and use "fullfile".
+- Prefer "patchs" ONLY when exact code match is possible
+- If unsure → use "fullfile"
+- NEVER guess code not present in context
 
-PATCH RULES:
-* If using "patchs", provide an array of patches.
-* Each patch must include:
-  - "lineFrom" (1-based index)
-  - "lineTo" (inclusive)
-  - "patch" (replacement code as string)
-* The system will remove lines from lineFrom → lineTo and replace with patch.
+PATCH RULES (FIND & REPLACE):
+- Each patch must include:
+  - "find": exact existing code (must match exactly)
+  - "replace": updated code
 
-STRING FORMATTING RULES:
-* Escape newlines as \\n
-* Escape quotes as \\" 
-* NEVER use real line breaks inside JSON string values
+- "find" must:
+  - Be copied EXACTLY from provided context
+  - Be UNIQUE in the file
+  - Be large enough to avoid accidental matches
+
+- If multiple matches possible → DO NOT patch → use fullfile
+
+FAILSAFE:
+- If exact match is uncertain → use fullfile
+- NEVER produce risky patches
+
+STRING RULES:
+- Escape newlines as \\n
+- Escape quotes as \\"
 
 SCHEMA:
 {
-  "<EXACT relative path>": {
+  "<relative path>": {
     "updateType": "fullfile" | "patchs" | "createNew",
-    "summary": "short summary of change",
-    "reason": "why this change is needed",
+    "summary": "short summary",
+    "reason": "why needed",
 
-    "fullfile": "entire file content (ONLY if updateType = fullfile)",
+    "fullfile": "entire file content",
     "patchs": [
-      { "lineFrom": number, "lineTo": number, "patch": "code as escaped string" }
+      {
+        "find": "exact old code",
+        "replace": "new code"
+      }
     ],
-    "content": "entire file content (ONLY if updateType = createNew)"
+    "content": "entire file content"
   }
 }
 
 RULES:
-* "fullfile", "patchs", and "content" are mutually exclusive.
-* Only include the field that matches the chosen updateType.
-* Line numbers are 1-based.
-* Keep patches minimal — only change necessary lines.
-* All strings must be valid JSON.
+- Only include field matching updateType
+- Keep patches minimal and precise
 
-FILE CONTEXT (use these exact paths as keys):
+FILE CONTEXT:
 ${context}`;
 }
 

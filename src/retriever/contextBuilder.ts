@@ -1,4 +1,5 @@
 import type { QueryResult } from "../types.js";
+import { folderFileHandler } from "../utils/folderFileHandler.js";
 
 const MAX_CHARS = 6000 * 4; // 1 token ≈ 4 chars
 
@@ -71,7 +72,11 @@ export function buildContext(results: QueryResult[], userQuery: string): string 
         ? { lines: `${chunk.startLine}-${chunk.endLine}` }
         : {}),
       score: parseFloat(chunk.score.toFixed(3)),
-      content: chunk.content,
+      content: folderFileHandler.readFileLines(
+        chunk.filePath,
+        Math.max(1, chunk.startLine - 20),
+        chunk.endLine + 20
+      ),
     };
 
     const entryStr = JSON.stringify(entry);

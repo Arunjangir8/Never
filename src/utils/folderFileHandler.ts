@@ -111,7 +111,7 @@ class FolderFileHandler {
 
   public applyPatches(
     relativePath: string,
-    patches: { lineFrom: number; lineTo: number; patch: string }[]
+    patches: { find: string; replace: string }[]
   ): void {
     const filePath = this.resolveSafePath(relativePath);
 
@@ -119,20 +119,22 @@ class FolderFileHandler {
       throw new Error("File not found");
     }
 
-    let lines = fs.readFileSync(filePath, "utf-8").split("\n");
+    let content = fs.readFileSync(filePath, "utf-8");
 
-    patches
-      .sort((a, b) => b.lineFrom - a.lineFrom)
-      .forEach(({ lineFrom, lineTo, patch }) => {
-        const start = lineFrom - 1;
-        const deleteCount = lineTo - lineFrom + 1;
-        const newLines = patch.split("\n");
+    for (const { find, replace } of patches) {
+      const count = (content.split(find).length - 1);
+      if (count === 0) {
+        throw new Error(`Patch target not found in file: ${relativePath}\n>> ${find.slice(0, 80)}`);
+      }
+      if (count > 1) {
+        throw new Error(`Patch target is ambiguous (${count} matches) in: ${relativePath}\n>> ${find.slice(0, 80)}`);
+      }
+      content = content.replace(find, replace);
+    }
 
-        lines.splice(start, deleteCount, ...newLines);
-      });
-
-    fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
+    fs.writeFileSync(filePath, content, "utf-8");
   }
+
 
   public createFile(relativePath: string, content: string = ""): void {
     const filePath = this.resolveSafePath(relativePath);

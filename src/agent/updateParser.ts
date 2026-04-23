@@ -1,12 +1,9 @@
 import path from "path";
 import { config } from "../config.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 export type PatchEntry = {
-  lineFrom: number;
-  lineTo: number;
-  patch: string;
+  find: string;
+  replace: string;
 };
 
 export type FileUpdate =
@@ -14,9 +11,6 @@ export type FileUpdate =
   | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string }
   | { type: "createNew"; relativePath: string; content: string; summary: string };
 
-// ── Sanitizers ────────────────────────────────────────────────────────────────
-
-// Fix 1: Replace backtick template literals with proper JSON double-quoted strings
 function replaceBackticks(text: string): string {
   return text.replace(/`([\s\S]*?)`/g, (_, inner: string) => {
     const escaped = inner
@@ -29,7 +23,6 @@ function replaceBackticks(text: string): string {
   });
 }
 
-// Fix 2: Escape unescaped newlines/tabs inside JSON string values
 function sanitizeJson(text: string): string {
   let result = "";
   let inString = false;
@@ -54,8 +47,6 @@ function sanitizeJson(text: string): string {
   return result;
 }
 
-// ── JSON Parser ───────────────────────────────────────────────────────────────
-
 function tryParseJson(text: string): unknown | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -74,7 +65,6 @@ function tryParseJson(text: string): unknown | null {
   if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
 
   for (const raw of candidates) {
-    // Try: as-is → backtick-fixed → sanitized → both fixes combined
     const attempts = [
       raw,
       sanitizeJson(raw),
@@ -82,14 +72,12 @@ function tryParseJson(text: string): unknown | null {
       sanitizeJson(replaceBackticks(raw)),
     ];
     for (const attempt of attempts) {
-      try { return JSON.parse(attempt); } catch { /* continue */ }
+      try { return JSON.parse(attempt); } catch { }
     }
   }
 
   return null;
 }
-
-// ── Path Helpers ──────────────────────────────────────────────────────────────
 
 const projectRoot = path.resolve(config.projectPath);
 
@@ -119,8 +107,6 @@ function isPlaceholderPath(p: string): boolean {
   );
 }
 
-// ── Single Update Parser ──────────────────────────────────────────────────────
-
 function isFlatUpdate(obj: Record<string, unknown>): boolean {
   return typeof obj["updateType"] === "string" &&
     (typeof obj["path"] === "string" || typeof obj["filePath"] === "string");
@@ -132,77 +118,68 @@ function parseSingleUpdate(relativePath: string, rec: Record<string, unknown>): 
 
   if (updateType === "createNew") {
     const content = String(rec["content"] ?? "").trim();
-    if (!content) {
-      console.warn(`⚠ Empty content for ${relativePath}`);
-      return null;
-    }
+    if (!content) { console.warn(`⚠ Empty content for ${relativePath}`); return null; }
     return { type: "createNew", relativePath, content, summary };
   }
 
   if (updateType === "fullfile") {
     const content = String(rec["fullfile"] ?? "").trim();
-    if (!content) { console.warn(`\x1b[33m⚠  Empty fullfile for ${relativePath}\x1b[0m`); return null; }
+    if (!content) { console.warn(`⚠ Empty fullfile for ${relativePath}`); return null; }
     return { type: "fullfile", relativePath, content, summary };
   }
 
   if (updateType === "patchs") {
     const raw = rec["patchs"];
-    if (!Array.isArray(raw) || raw.length === 0) { console.warn(`\x1b[33m⚠  Empty patchs for ${relativePath}\x1b[0m`); return null; }
+    if (!Array.isArray(raw) || raw.length === 0) { console.warn(`⚠ Empty patchs for ${relativePath}`); return null; }
+
     const patches: PatchEntry[] = raw
       .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
       .map((p) => ({
-        lineFrom: Number(p["lineFrom"]),
-        lineTo: Number(p["lineTo"]),
-        patch: String(p["patch"] ?? ""),
+        find: String(p["find"] ?? ""),
+        replace: String(p["replace"] ?? ""),
       }))
-      .filter((p) => p.lineFrom > 0 && p.lineTo >= p.lineFrom);
-    if (patches.length === 0) { console.warn(`\x1b[33m⚠  No valid patches for ${relativePath}\x1b[0m`); return null; }
+      .filter((p) => p.find.length > 0);
+
+    if (patches.length === 0) { console.warn(`⚠ No valid patches for ${relativePath}`); return null; }
     return { type: "patchs", relativePath, patches, summary };
   }
 
-  console.warn(`\x1b[33m⚠  Unknown updateType "${updateType}" for ${relativePath}\x1b[0m`);
+  console.warn(`⚠ Unknown updateType "${updateType}" for ${relativePath}`);
   return null;
 }
-
-// ── Main Export ───────────────────────────────────────────────────────────────
 
 export function parseUpdates(llmResponse: string): FileUpdate[] {
   const parsed = tryParseJson(llmResponse);
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    console.warn("\x1b[33m⚠  No valid JSON detected in LLM response.\x1b[0m");
+    console.warn("⚠ No valid JSON detected in LLM response.");
     return [];
   }
 
   const obj = parsed as Record<string, unknown>;
   const updates: FileUpdate[] = [];
 
-  // Fallback: flat { "path": "...", "updateType": "..." }
   if (isFlatUpdate(obj)) {
     const rawPath = String(obj["path"] ?? obj["filePath"] ?? "").trim();
     const relativePath = normalizeRelativePath(rawPath);
     if (!relativePath || isPlaceholderPath(relativePath)) {
-      console.warn("\x1b[33m⚠  Flat update has missing or placeholder path.\x1b[0m");
+      console.warn("⚠ Flat update has missing or placeholder path.");
       return [];
     }
-    console.warn(`\x1b[33m⚠  LLM used flat format — recovering...\x1b[0m`);
+    console.warn("⚠ LLM used flat format — recovering...");
     const update = parseSingleUpdate(relativePath, obj);
     if (update) updates.push(update);
     return updates;
   }
 
-  // Normal: { "my-project/index.ts": { ... } }
   for (const [rawPath, value] of Object.entries(obj)) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    if (isPlaceholderPath(rawPath)) {
-      console.warn(`\x1b[33m⚠  Skipping placeholder path "${rawPath}"\x1b[0m`);
-      continue;
-    }
+    if (isPlaceholderPath(rawPath)) { console.warn(`⚠ Skipping placeholder path "${rawPath}"`); continue; }
     const relativePath = normalizeRelativePath(rawPath);
     const update = parseSingleUpdate(relativePath, value as Record<string, unknown>);
     if (update) updates.push(update);
   }
 
-  if (updates.length === 0) console.warn("\x1b[33m⚠  No file updates found in LLM response.\x1b[0m");
+  if (updates.length === 0) console.warn("⚠ No file updates found in LLM response.");
   return updates;
 }
