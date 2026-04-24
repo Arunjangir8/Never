@@ -8,6 +8,7 @@
     "dev": "tsx src/index.ts",
     "index": "tsx src/index.ts --index",
     "watch": "tsx src/index.ts --watch",
+    "debug": "tsx src/index.ts --debug",
     "build": "tsc",
     "start": "node dist/index.js"
   },

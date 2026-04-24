@@ -30,3 +30,46 @@ export interface FileChunk {
   endLine: number;
   chunkIndex: number;
 }
+
+// Red Agent
+
+export interface Issue {
+  title: string;
+  explanation: string;
+  affected: string;
+}
+
+export interface RedFinding {
+  chunk_id: string;
+  file: string;
+  bugs: Issue[];
+  edge_cases: Issue[];
+  risks: Issue[];
+}
+
+// Blue Agent 
+
+export interface Fix {
+  title: string;
+  explanation: string;
+  fix: string;        
+  affected: string;  
+}
+
+export interface BlueFix {
+  chunk_id: string; 
+  file: string;
+  fixes: Fix[];
+}
+
+//  Graph State 
+
+export type PipelineMode = "debug" | "watch";
+
+export interface AgentState {
+  chunks: FileChunk[];
+  mode: PipelineMode;
+  redFindings: RedFinding[];
+  userApprovedFix: boolean;
+  blueFixes: BlueFix[];
+}
