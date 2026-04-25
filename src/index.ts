@@ -5,6 +5,7 @@ import { indexProject } from "./indexer/indexer.js";
 import { watchProject } from "./indexer/watcher.js";
 import { startRepl } from "./cli/repl.js";
 import { folderFileHandler } from "./utils/folderFileHandler.js";
+import { runPipeline } from "./agent/bug-fixer/graph.js";
 
 async function checkService(url: string, name: string): Promise<boolean> {
   try {
@@ -60,6 +61,11 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  if (mode === "--debug") {
+    const chunks = await indexProject(config.projectPath);
+    await runPipeline(chunks, "debug");
+    process.exit(0);
+  }
   if (mode === "--watch") {
     await indexProject(config.projectPath);
     watchProject(config.projectPath);

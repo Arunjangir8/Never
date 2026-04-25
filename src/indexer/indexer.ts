@@ -6,31 +6,33 @@ import { generateEmbeddings } from "./embedder.js";
 import { upsertChunks, deleteFileChunks } from "./chromaStore.js";
 import type { FileChunk } from "../types.js";
 
-export async function indexFile(filePath: string): Promise<number> {
+export async function indexFile(filePath: string): Promise<FileChunk[]> {
   const content = await readFile(filePath, "utf-8");
   const chunks = chunkFile(filePath, content);
-  if (chunks.length === 0) return 0;
+  if (chunks.length === 0) return [];
   const embeddings = await generateEmbeddings(chunks.map((c) => c.content));
   await upsertChunks(chunks, embeddings);
-  return chunks.length;
+  return chunks;;
 }
 
 export async function deleteFile(filePath: string): Promise<void> {
   await deleteFileChunks(filePath);
 }
 
-export async function indexProject(projectPath: string): Promise<void> {
+export async function indexProject(projectPath: string): Promise<FileChunk[]> {
   const absPath = resolve(projectPath);
   const files = await scanDirectory(absPath);
   console.log(`Found ${files.length} files. Indexing...`);
 
+  const allChunks: FileChunk[] = [];
   let totalChunks = 0;
   let indexed = 0;
 
   for (const file of files) {
     try {
-      const count = await indexFile(file);
-      totalChunks += count;
+      const chunks = await indexFile(file);
+      allChunks.push(...chunks);
+      totalChunks += chunks.length;
       indexed++;
       process.stdout.write(`\r[${indexed}/${files.length}] Indexed: ${file}`);
     } catch (err) {
@@ -39,4 +41,5 @@ export async function indexProject(projectPath: string): Promise<void> {
   }
 
   console.log(`\nIndexed ${indexed} files, ${totalChunks} chunks total.`);
+  return allChunks;
 }

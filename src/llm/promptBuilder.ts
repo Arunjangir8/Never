@@ -1,3 +1,8 @@
+import { FileChunk, RedFinding } from "../types.js";
+
+
+// PROMPT FOR THE MAIN OPTIMUS ASSISTANT
+
 export function buildSystemPrompt(context: string): string {
   return `You are a coding agent that modifies files.
 Analyze the requested change and return a structured JSON response.
@@ -102,4 +107,105 @@ export function getRouterPrompt() {
       Reply with ONLY one word:
       local | openai | gemini | anthropic
       No explanation.`
+}
+
+// RED & BLUE AGENT PROMPTS
+
+export function buildRedSystemPrompt(): string {
+  return `You are a Red Team code analyst. Your only job is to find problems in code.
+You must respond with ONLY valid JSON — no explanation, no markdown, no code fences.
+
+Return this exact schema:
+{
+  "chunk_id": "string",
+  "file": "string",
+  "bugs": [
+    { "title": "string", "explanation": "string", "affected": "string" }
+  ],
+  "edge_cases": [
+    { "title": "string", "explanation": "string", "affected": "string" }
+  ],
+  "risks": [
+    { "title": "string", "explanation": "string", "affected": "string" }
+  ]
+}
+
+Rules:
+- If a category has no findings return an empty array []
+- Never omit a key even if empty
+- "affected" must be the exact function name, variable name, or expression from the code
+- Be specific — vague findings like "may cause errors" are not acceptable
+- Focus on: null/undefined handling, race conditions, error swallowing,
+  unhandled promise rejections, type coercion, unbounded loops,
+  resource leaks, silent failures, missing input validation`;
+}
+
+export function buildRedUserPrompt(chunk: FileChunk): string {
+  return `Analyze this code chunk:
+
+File: ${chunk.filePath}
+Lines: ${chunk.startLine}–${chunk.endLine}
+Chunk ID: ${chunk.filePath}::${chunk.chunkIndex}
+
+\`\`\`
+${chunk.content}
+\`\`\`
+
+Return ONLY the JSON. No explanation. No markdown.`;
+}
+
+export function buildBlueSystemPrompt(): string {
+  return `You are a Blue Team code fixer. You receive structured findings from a Red Team analyst and your job is to generate concrete fixes for each issue.
+You must respond with ONLY valid JSON — no explanation, no markdown, no code fences.
+
+Return this exact schema:
+{
+  "chunk_id": "string",
+  "file": "string",
+  "fixes": [
+    {
+      "title": "string",
+      "explanation": "string",
+      "fix": "string",
+      "affected": "string"
+    }
+  ]
+}
+
+Rules:
+- Generate one fix per issue across bugs, edge_cases, and risks
+- "fix" must be concrete — actual code snippet or specific actionable change, never vague advice
+- "affected" must exactly match the "affected" field from the finding you are fixing
+- "explanation" must describe what the fix does and why it resolves the issue
+- If two issues have the same fix, still list them separately
+- Never omit a key even if empty
+- If no fixes can be generated return "fixes" as an empty array []`;
+}
+
+export function buildBlueUserPrompt(finding: RedFinding): string {
+  const allIssues = [
+    ...finding.bugs.map((i) => ({ ...i, category: "bug" })),
+    ...finding.edge_cases.map((i) => ({ ...i, category: "edge_case" })),
+    ...finding.risks.map((i) => ({ ...i, category: "risk" })),
+  ];
+
+  const issueList = allIssues
+    .map(
+      (issue, idx) =>
+        `${idx + 1}. [${issue.category}]
+   Title: ${issue.title}
+   Affected: ${issue.affected}
+   Explanation: ${issue.explanation}`
+    )
+    .join("\n\n");
+
+  return `Fix the following issues found in this code chunk:
+
+File: ${finding.file}
+Chunk ID: ${finding.chunk_id}
+
+Issues to fix:
+${issueList}
+
+Return ONLY the JSON. No explanation. No markdown.`;
 }

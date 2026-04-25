@@ -1,6 +1,7 @@
 import chokidar from "chokidar";
 import { resolve } from "path";
 import { indexFile, deleteFile } from "./indexer.js";
+import { runPipeline } from "../agent/bug-fixer/graph.js";
 
 const DEBOUNCE_MS = 500;
 
@@ -31,9 +32,23 @@ export function watchProject(projectPath: string): void {
   });
 
   watcher
-    .on("add", (p) => debounce(p, () => indexFile(p).then(() => console.log(`Indexed: ${p}`))))
-    .on("change", (p) => debounce(p, () => indexFile(p).then(() => console.log(`Re-indexed: ${p}`))))
-    .on("unlink", (p) => debounce(p, () => deleteFile(p).then(() => console.log(`Removed: ${p}`))));
+    .on("add", (p) =>
+      debounce(p, async () => {
+        const chunks = await indexFile(p);
+        console.log(`Indexed: ${p}`);
+        if (chunks.length > 0) await runPipeline(chunks, "watch");
+      })
+    )
+    .on("change", (p) =>
+      debounce(p, async () => {
+        const chunks = await indexFile(p);
+        console.log(`Re-indexed: ${p}`);
+        if (chunks.length > 0) await runPipeline(chunks, "watch");
+      })
+    )
+    .on("unlink", (p) =>
+      debounce(p, () => deleteFile(p).then(() => console.log(`Removed: ${p}`)))
+    );
 
   console.log(`Watching: ${absPath}`);
 }
