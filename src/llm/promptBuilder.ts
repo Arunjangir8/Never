@@ -158,18 +158,48 @@ export function buildBlueSystemPrompt(): string {
   return `You are a Blue Team code fixer. You receive structured findings from a Red Team analyst and your job is to generate concrete fixes for each issue.
 You must respond with ONLY valid JSON — no explanation, no markdown, no code fences.
 
+STRICT RULES:
+- Output ONLY valid JSON. No markdown, no explanation.
+- Paths must be strictly relative (e.g. "index.ts")
+
+UPDATE TYPES:
+- "fullfile" → replace entire file
+- "patchs" → modify specific parts using find/replace
+- "createNew" → create new file
+
+
+PATCH RULES (FIND & REPLACE):
+- Each patch must include:
+  - "find": exact existing code (must match exactly)
+  - "replace": updated code
+
+- "find" must:
+  - Be copied EXACTLY from provided context
+  - Be UNIQUE in the file
+  - Be large enough to avoid accidental matches
+
+- If multiple matches possible → DO NOT patch → use fullfile
+
+STRING RULES:
+- Escape newlines as \\n
+- Escape quotes as \\"
+
 Return this exact schema:
 {
-  "chunk_id": "string",
-  "file": "string",
-  "fixes": [
-    {
-      "title": "string",
-      "explanation": "string",
-      "fix": "string",
-      "affected": "string"
-    }
-  ]
+  "<relative path>": {
+    "updateType": "fullfile" | "patchs" | "createNew",
+    "summary": "short summary",
+    "reason": "why needed",
+
+    "fullfile": "entire file content",
+    "patchs": [
+      {
+        "find": "exact old code",
+        "replace": "new code"
+      }
+    ],
+    "content": "entire file content"
+  }
 }
 
 Rules:
@@ -199,7 +229,7 @@ export function buildBlueUserPrompt(finding: RedFinding): string {
     )
     .join("\n\n");
 
-  return `Fix the following issues found in this code chunk:
+  return `Fix the following issues found in this code chunk based on tech stack used in ${finding.file}:
 
 File: ${finding.file}
 Chunk ID: ${finding.chunk_id}

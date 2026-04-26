@@ -1,15 +1,7 @@
 import path from "path";
 import { config } from "../config.js";
+import { FileUpdate, PatchEntry } from "../types.js";
 
-export type PatchEntry = {
-  find: string;
-  replace: string;
-};
-
-export type FileUpdate =
-  | { type: "fullfile"; relativePath: string; content: string; summary: string }
-  | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string }
-  | { type: "createNew"; relativePath: string; content: string; summary: string };
 
 function replaceBackticks(text: string): string {
   return text.replace(/`([\s\S]*?)`/g, (_, inner: string) => {
@@ -82,7 +74,9 @@ function tryParseJson(text: string): unknown | null {
 const projectRoot = path.resolve(config.projectPath);
 
 function normalizeRelativePath(p: string): string {
-  const cleaned = p.trim();
+  let cleaned = p.trim();
+
+  cleaned = cleaned.replace(/^[/\\]+/, "");
 
   if (path.isAbsolute(cleaned) && cleaned.startsWith(projectRoot)) {
     return path.relative(projectRoot, cleaned);

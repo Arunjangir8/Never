@@ -1,17 +1,20 @@
 import { StateGraph, END, START, Annotation } from "@langchain/langgraph";
-import { BlueFix, FileChunk, PipelineMode, RedFinding } from "../../types.js";
+import { BlueFix, FileChunk, FileUpdate, PipelineMode, RedFinding } from "../../types.js";
 import { runRedAgent } from "./redAgent.js";
-import { printBlueFindings, printRedFindings, printSeparator } from "../../cli/display.js";
+import { printBlueFindings, printError, printRedFindings, printSeparator } from "../../cli/display.js";
 import { askUserPermission } from "../../cli/prompt.js";
 import { runBlueAgent } from "./blueAgent.js";
+import { parseUpdates } from "../updateParser.js";
+import { folderFileHandler } from "../../utils/folderFileHandler.js";
 
 const PipelineState = Annotation.Root({
-  chunks:           Annotation<FileChunk[]>(),
-  mode:             Annotation<PipelineMode>(),
-  redFindings:      Annotation<RedFinding[]>({ default: () => [], reducer: (_, v) => v }),
-  userApprovedFix:  Annotation<boolean>({ default: () => false, reducer: (_, v) => v }),
-  blueFixes:        Annotation<BlueFix[]>({ default: () => [], reducer: (_, v) => v }),
-  error:            Annotation<string | null>({ default: () => null, reducer: (_, v) => v }),
+  chunks: Annotation<FileChunk[]>(),
+  mode: Annotation<PipelineMode>(),
+  redFindings: Annotation<RedFinding[]>({ default: () => [], reducer: (_, v) => v }),
+  userApprovedFix: Annotation<boolean>({ default: () => false, reducer: (_, v) => v }),
+  blueUpdates: Annotation<FileUpdate[]>({ default: () => [], reducer: (_, v) => v }),
+  applyApproved: Annotation<boolean>({ default: () => false, reducer: (_, v) => v }),
+  error: Annotation<string | null>({ default: () => null, reducer: (_, v) => v }),
 });
 
 type PipelineStateType = typeof PipelineState.State;
@@ -64,21 +67,65 @@ async function blueNode(state: PipelineStateType): Promise<Partial<PipelineState
   console.log("\n\x1b[34m[Blue Agent]\x1b[0m Generating fixes...\n");
 
   try {
-    const blueFixes: BlueFix[] = [];
+    const blueUpdates: FileUpdate[] = [];
 
     for (const finding of state.redFindings) {
       const fix = await runBlueAgent(finding);
       if (fix) {
-        blueFixes.push(fix);
+        blueUpdates.push(...fix);
         printBlueFindings(fix);
         printSeparator();
       }
     }
-
-    return { blueFixes };
+    return { blueUpdates };
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// Node 4: Apply Permission
+
+async function applyPermissionNode(
+  state: PipelineStateType
+): Promise<Partial<PipelineStateType>> {
+
+  if (!state.blueUpdates || state.blueUpdates.length === 0) {
+    console.log("\n\x1b[2mNo updates to apply.\x1b[0m\n");
+    return { applyApproved: false };
+  }
+
+  const approved = await askUserPermission(
+    "\n\x1b[33m Apply these fixes to files? (y/n): \x1b[0m"
+  );
+
+  return { applyApproved: approved };
+}
+
+// Node 5: parse LLM output and apply file changes
+async function parseAndApply(state: PipelineStateType): Promise<Partial<PipelineStateType>> {
+  const updates = state.blueUpdates;
+  if (updates.length === 0) return {};
+
+  for (const update of updates) {
+    console.log(`\n${update.summary}`);
+    try {
+      if (update.type === "fullfile") {
+        folderFileHandler.updateFile(update.relativePath, update.content);
+        console.log(`\x1b[32m✔ fullfile applied: ${update.relativePath}\x1b[0m`);
+      } else if (update.type === "patchs") {
+        folderFileHandler.applyPatches(update.relativePath, update.patches);
+        console.log(`\x1b[32m✔ ${update.patches.length} patch(es) applied: ${update.relativePath}\x1b[0m`);
+      } else if (update.type === "createNew") {
+        folderFileHandler.createFile(update.relativePath, update.content);
+        console.log(`\x1b[32m✔ file created: ${update.relativePath}\x1b[0m`);
+      }
+    } catch (err) {
+      printError(`Failed on ${update.relativePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  console.log("\n\x1b[32m✓ All changes applied successfully.\x1b[0m");
+  return {};
 }
 
 // Error Node
@@ -103,32 +150,50 @@ function shouldContinueAfterPermission(state: PipelineStateType): string {
 
 function shouldContinueAfterBlue(state: PipelineStateType): string {
   if (state.error) return "handle_error";
-  return END;
+  return "apply_permission";
+}
+
+function shouldContinueAfterApplyPermission(state: PipelineStateType): string {
+  if (state.error) return "handle_error";
+  if (!state.applyApproved) return END;
+  return "parse_and_apply";
 }
 
 const graph = new StateGraph(PipelineState)
-  .addNode("red",          redNode)
-  .addNode("permission",   permissionNode)
-  .addNode("blue",         blueNode)
+  .addNode("red", redNode)
+  .addNode("permission", permissionNode)
+  .addNode("blue", blueNode)
+  .addNode("apply_permission", applyPermissionNode)
+  .addNode("parse_and_apply", parseAndApply)
   .addNode("handle_error", handleError)
 
   .addEdge(START, "red")
+
   .addConditionalEdges("red", shouldContinueAfterRed, {
-    permission:   "permission",
+    permission: "permission",
     handle_error: "handle_error",
   })
+
   .addConditionalEdges("permission", shouldContinueAfterPermission, {
-    blue:         "blue",
+    blue: "blue",
     handle_error: "handle_error",
-    [END]:        END,
+    [END]: END,
   })
+
   .addConditionalEdges("blue", shouldContinueAfterBlue, {
+    apply_permission: "apply_permission",
     handle_error: "handle_error",
-    [END]:        END,
   })
+
+  .addConditionalEdges("apply_permission", shouldContinueAfterApplyPermission, {
+    parse_and_apply: "parse_and_apply",
+    handle_error: "handle_error",
+    [END]: END,
+  })
+
+  .addEdge("parse_and_apply", END)
   .addEdge("handle_error", END)
   .compile();
-
 
 export async function runPipeline(
   chunks: FileChunk[],

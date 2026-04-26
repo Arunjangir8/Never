@@ -1,4 +1,4 @@
-import type { RedFinding, BlueFix } from "../types.js";
+import type { RedFinding, BlueFix, FileUpdate } from "../types.js";
 
 
 const R = "\x1b[31m";
@@ -97,20 +97,37 @@ export function printRedFindings(finding: RedFinding): void {
   }
 }
 
-export function printBlueFindings(fix: BlueFix): void {
-  console.log(`\n${"\x1b[34m"}${B}[Blue Agent]${RESET} ${DIM}${fix.file}${RESET}`);
-  console.log(`${DIM}chunk: ${fix.chunk_id}${RESET}\n`);
+export function printBlueFindings(updates: FileUpdate[]): void {
+  console.log(`\n\x1b[34m[Blue Agent]\x1b[0m\n`);
 
-  if (fix.fixes.length === 0) {
-    console.log(`  ${DIM}No fixes generated for this chunk.${RESET}\n`);
+  if (!updates || updates.length === 0) {
+    console.log(`  \x1b[2mNo fixes generated.\x1b[0m\n`);
     return;
   }
 
-  for (const f of fix.fixes) {
-    console.log(`  ${G}✔${RESET} ${B}${f.title}${RESET}`);
-    console.log(`    ${DIM}affected: ${f.affected}${RESET}`);
-    console.log(`    ${f.explanation}`);
-    console.log(`\n    ${Y}Fix:${RESET}`);
-    console.log(`    ${f.fix}\n`);
+  for (const update of updates) {
+    console.log(`  \x1b[32m✔\x1b[0m \x1b[34m${update.relativePath}\x1b[0m`);
+    console.log(`    \x1b[2mtype: ${update.type}\x1b[0m`);
+    console.log(`    ${update.summary}`);
+
+    if (update.type === "fullfile") {
+      console.log(`\n    \x1b[33mFull File:\x1b[0m`);
+      console.log(`    ${update.content}\n`);
+    }
+
+    if (update.type === "createNew") {
+      console.log(`\n    \x1b[33mNew File:\x1b[0m`);
+      console.log(`    ${update.content}\n`);
+    }
+
+    if (update.type === "patchs") {
+      console.log(`\n    \x1b[33mPatches:\x1b[0m`);
+      for (const p of update.patches) {
+        console.log(`      \x1b[31m- find:\x1b[0m ${p.find}`);
+        console.log(`      \x1b[32m+ replace:\x1b[0m ${p.replace}\n`);
+      }
+    }
+
+    console.log("");
   }
 }

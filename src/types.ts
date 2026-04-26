@@ -1,3 +1,13 @@
+export type PatchEntry = {
+  find: string;
+  replace: string;
+};
+
+export type FileUpdate =
+  | { type: "fullfile"; relativePath: string; content: string; summary: string }
+  | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string }
+  | { type: "createNew"; relativePath: string; content: string; summary: string };
+
 export interface QueryResult {
   filePath: string;
   content: string;
@@ -71,5 +81,5 @@ export interface AgentState {
   mode: PipelineMode;
   redFindings: RedFinding[];
   userApprovedFix: boolean;
-  blueFixes: BlueFix[];
+  blueUpdates: FileUpdate[];
 }
