@@ -38,6 +38,9 @@ function sanitizeJson(text: string): string {
 
   return result;
 }
+function fixLLMEscapes(text: string): string {
+  return text.replace(/\\\\"/g, '\\\\\\"');
+}
 
 function tryParseJson(text: string): unknown | null {
   const trimmed = text.trim();
@@ -57,11 +60,17 @@ function tryParseJson(text: string): unknown | null {
   if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1));
 
   for (const raw of candidates) {
+    const fixed = fixLLMEscapes(raw);
     const attempts = [
       raw,
       sanitizeJson(raw),
       replaceBackticks(raw),
       sanitizeJson(replaceBackticks(raw)),
+      // Recovery passes for LLM escape mistakes — tried after canonical ones
+      fixed,
+      sanitizeJson(fixed),
+      replaceBackticks(fixed),
+      sanitizeJson(replaceBackticks(fixed)),
     ];
     for (const attempt of attempts) {
       try { return JSON.parse(attempt); } catch { }
