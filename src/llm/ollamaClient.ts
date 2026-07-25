@@ -3,22 +3,17 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { config } from "../config.js";
+import type { ModelInput } from "./modelRouter.js";
 
-type Provider = "local" | "openai" | "gemini" | "anthropic";
-
-interface ModelInput {
-  model: string;
-  provider: Provider;
-  apiKey?: string;
-}
-
-function makeClient(input: ModelInput) {
+// json=true makes Ollama emit only JSON. Small models add prose otherwise.
+function makeClient(input: ModelInput, json = false) {
   switch (input.provider) {
     case "local":
       return new ChatOllama({
         model: input.model,
-        baseUrl:
-          process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
+        baseUrl: config.ollamaBaseUrl,
+        ...(json ? { format: "json" as const } : {}),
       });
 
     case "openai":
@@ -85,9 +80,10 @@ export async function* streamResponse(
 export async function generateResponse(
   systemPrompt: string,
   userPrompt: string,
-  input: ModelInput
+  input: ModelInput,
+  json = false
 ): Promise<string> {
-  const client = makeClient(input);
+  const client = makeClient(input, json);
 
   try {
     const response = await client.invoke([

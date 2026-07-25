@@ -17,6 +17,7 @@ export async function runBlueAgent(
     buildBlueSystemPrompt(),
     buildBlueUserPrompt(finding),
     getModel("code"),
+    true // constrained JSON decoding for local models
   );
 
   const updates = parseUpdates(raw);

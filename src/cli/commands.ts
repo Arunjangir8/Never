@@ -1,27 +1,25 @@
 import { exec } from "child_process";
 import { promisify } from "util";
+import { isAbsolute, resolve } from "path";
 import { indexProject, indexFile } from "../indexer/indexer.js";
 import { watchProject } from "../indexer/watcher.js";
 import { config } from "../config.js";
+import { folderFileHandler } from "../utils/folderFileHandler.js";
 import { printSeparator, printError, printSuccess } from "./display.js";
 
 const execAsync = promisify(exec);
 
 const HELP = `
   /index              Re-index entire project
-  /index <file>       Index a single file
+  /index <file>       Index a single file (path relative to PROJECT_PATH)
   /watch              Start file watcher
-  /clear              Clear conversation history
+  /status             Show current provider, models and project path
+  /clear              Clear the screen
   /models             List available Ollama models
-  /revert <file>      Revert last patch on a file
+  /revert <file>      Restore a file from its .optimus.bak backup
   /help               Show this help
   /exit               Exit Optimus
 `;
-
-let clearHistoryFn: (() => void) | null = null;
-export function registerClearHistory(fn: () => void): void {
-  clearHistoryFn = fn;
-}
 
 export async function handleCommand(input: string): Promise<boolean> {
   const trimmed = input.trim();
@@ -32,7 +30,10 @@ export async function handleCommand(input: string): Promise<boolean> {
   switch (cmd) {
     case "/index": {
       if (args.length > 0) {
-        const file = args.join(" ");
+        const raw = args.join(" ");
+        // Chunk ids use absolute paths. Resolve like indexProject does,
+        // otherwise re-indexing adds a duplicate entry.
+        const file = isAbsolute(raw) ? raw : resolve(config.projectPath, raw);
         try {
           await indexFile(file);
           printSuccess(`Indexed: ${file}`);
@@ -52,9 +53,7 @@ export async function handleCommand(input: string): Promise<boolean> {
     }
 
     case "/clear": {
-      clearHistoryFn?.();
       console.clear();
-      printSuccess("Conversation history cleared.");
       break;
     }
 
@@ -70,14 +69,32 @@ export async function handleCommand(input: string): Promise<boolean> {
       break;
     }
 
+    case "/status": {
+      printSeparator();
+      const modelLine =
+        config.provider === "local"
+          ? `${config.models.local.general} (general) / ${config.models.local.coding} (code)`
+          : config.models.api[config.provider].model;
+      console.log(`  provider   ${config.provider}`);
+      console.log(`  model      ${modelLine}`);
+      console.log(`  embeddings ${config.models.local.embedding}`);
+      console.log(`  project    ${folderFileHandler.rootPath}`);
+      console.log(`  chroma     ${config.chromaUrl} (${config.collectionName})`);
+      console.log(`  new files  ${config.allowNewFiles ? "allowed" : "blocked"}`);
+      console.log(`  backups    ${config.backupBeforeWrite ? "on" : "off"}`);
+      printSeparator();
+      break;
+    }
+
     case "/revert": {
       if (args.length === 0) {
-        printError("Usage: /revert <filePath>");
+        printError("Usage: /revert <file relative to PROJECT_PATH>");
         break;
       }
-      const { revertUpdate } = await import("../agent/patcher.js");
+      const target = args.join(" ");
       try {
-        await revertUpdate(args.join(" "));
+        folderFileHandler.revert(target);
+        printSuccess(`Reverted: ${target}`);
       } catch (err) {
         printError(err instanceof Error ? err.message : String(err));
       }

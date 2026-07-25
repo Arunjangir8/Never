@@ -1,10 +1,10 @@
 import { StateGraph, END, START, Annotation } from "@langchain/langgraph";
-import { BlueFix, FileChunk, FileUpdate, PipelineMode, RedFinding } from "../../types.js";
+import { FileChunk, FileUpdate, PipelineMode, RedFinding } from "../../types.js";
 import { runRedAgent } from "./redAgent.js";
-import { printBlueFindings, printError, printRedFindings, printSeparator } from "../../cli/display.js";
+import { printBlueFindings, printRedFindings, printSeparator } from "../../cli/display.js";
 import { askUserPermission } from "../../cli/prompt.js";
 import { runBlueAgent } from "./blueAgent.js";
-import { parseUpdates } from "../updateParser.js";
+import { applyUpdates } from "../applyUpdates.js";
 import { folderFileHandler } from "../../utils/folderFileHandler.js";
 
 const PipelineState = Annotation.Root({
@@ -95,36 +95,16 @@ async function applyPermissionNode(
   }
 
   const approved = await askUserPermission(
-    "\n\x1b[33m Apply these fixes to files? (y/n): \x1b[0m"
+    `\n\x1b[33mApply ${state.blueUpdates.length} fix(es) to ${folderFileHandler.rootPath}? (y/n): \x1b[0m`
   );
 
   return { applyApproved: approved };
 }
 
-// Node 5: parse LLM output and apply file changes
+// Node 5: Write approved updates
 async function parseAndApply(state: PipelineStateType): Promise<Partial<PipelineStateType>> {
-  const updates = state.blueUpdates;
-  if (updates.length === 0) return {};
-
-  for (const update of updates) {
-    console.log(`\n${update.summary}`);
-    try {
-      if (update.type === "fullfile") {
-        folderFileHandler.updateFile(update.relativePath, update.content);
-        console.log(`\x1b[32m✔ fullfile applied: ${update.relativePath}\x1b[0m`);
-      } else if (update.type === "patchs") {
-        folderFileHandler.applyPatches(update.relativePath, update.patches);
-        console.log(`\x1b[32m✔ ${update.patches.length} patch(es) applied: ${update.relativePath}\x1b[0m`);
-      } else if (update.type === "createNew") {
-        folderFileHandler.createFile(update.relativePath, update.content);
-        console.log(`\x1b[32m✔ file created: ${update.relativePath}\x1b[0m`);
-      }
-    } catch (err) {
-      printError(`Failed on ${update.relativePath}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  console.log("\n\x1b[32m✓ All changes applied successfully.\x1b[0m");
+  if (state.blueUpdates.length === 0) return {};
+  applyUpdates(state.blueUpdates);
   return {};
 }
 

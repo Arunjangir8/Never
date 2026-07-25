@@ -1,4 +1,4 @@
-import type { RedFinding, BlueFix, FileUpdate } from "../types.js";
+import type { RedFinding, FileUpdate } from "../types.js";
 
 
 const R = "\x1b[31m";
@@ -97,34 +97,41 @@ export function printRedFindings(finding: RedFinding): void {
   }
 }
 
+const PREVIEW_LINES = 30;
+
+function preview(content: string): string {
+  const lines = content.split("\n");
+  const shown = lines.slice(0, PREVIEW_LINES).map((l) => `      ${l}`);
+  if (lines.length > PREVIEW_LINES) {
+    shown.push(`      ${DIM}… ${lines.length - PREVIEW_LINES} more lines${RESET}`);
+  }
+  return shown.join("\n");
+}
+
 export function printBlueFindings(updates: FileUpdate[]): void {
   console.log(`\n\x1b[34m[Blue Agent]\x1b[0m\n`);
 
   if (!updates || updates.length === 0) {
-    console.log(`  \x1b[2mNo fixes generated.\x1b[0m\n`);
+    console.log(`  ${DIM}No fixes generated.${RESET}\n`);
     return;
   }
 
   for (const update of updates) {
-    console.log(`  \x1b[32m✔\x1b[0m \x1b[34m${update.relativePath}\x1b[0m`);
-    console.log(`    \x1b[2mtype: ${update.type}\x1b[0m`);
+    console.log(`  ${G}✔${RESET} \x1b[34m${update.relativePath}${RESET}`);
+    console.log(`    ${DIM}type: ${update.type}${RESET}`);
     console.log(`    ${update.summary}`);
 
-    if (update.type === "fullfile") {
-      console.log(`\n    \x1b[33mFull File:\x1b[0m`);
-      console.log(`    ${update.content}\n`);
-    }
-
-    if (update.type === "createNew") {
-      console.log(`\n    \x1b[33mNew File:\x1b[0m`);
-      console.log(`    ${update.content}\n`);
+    if (update.type === "fullfile" || update.type === "createNew") {
+      const label = update.type === "fullfile" ? "Full File" : "New File";
+      console.log(`\n    ${Y}${label}:${RESET}`);
+      console.log(`${preview(update.content)}\n`);
     }
 
     if (update.type === "patchs") {
-      console.log(`\n    \x1b[33mPatches:\x1b[0m`);
+      console.log(`\n    ${Y}Patches:${RESET}`);
       for (const p of update.patches) {
-        console.log(`      \x1b[31m- find:\x1b[0m ${p.find}`);
-        console.log(`      \x1b[32m+ replace:\x1b[0m ${p.replace}\n`);
+        console.log(`      ${R}- find:${RESET} ${p.find}`);
+        console.log(`      ${G}+ replace:${RESET} ${p.replace}\n`);
       }
     }
 

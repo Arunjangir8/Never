@@ -1,21 +1,35 @@
 import "dotenv/config";
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) throw new Error(`Missing required env var: ${key}`);
-  return value;
+export type Provider = "local" | "openai" | "gemini" | "anthropic";
+
+const PROVIDERS: Provider[] = ["local", "openai", "gemini", "anthropic"];
+
+// Don't throw: imported at startup, so a throw here escapes main()'s catch.
+function readProvider(): Provider {
+  const raw = (process.env["PROVIDER"] ?? "local").toLowerCase();
+  const match = PROVIDERS.find((p) => p === raw);
+  if (!match) {
+    console.warn(
+      `\x1b[33m⚠ Invalid PROVIDER="${raw}", falling back to "local". ` +
+        `Valid values: ${PROVIDERS.join(" | ")}\x1b[0m`
+    );
+    return "local";
+  }
+  return match;
 }
 
 export const config = {
+  provider: readProvider(),
+
   ollamaBaseUrl: process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
-  chromaUrl: process.env["CHROMA_URL"] ?? "http://localhost:8201",
+  chromaUrl: process.env["CHROMA_URL"] ?? "http://localhost:8000",
   projectPath: process.env["PROJECT_PATH"] ?? "./my-project",
 
   allowNewFiles:
     (process.env["ALLOW_NEW_FILES"] ?? "false").toLowerCase() === "true",
 
   backupBeforeWrite:
-    (process.env["BACKUP_BEFORE_WRITE"] ?? "false").toLowerCase() === "true",
+    (process.env["BACKUP_BEFORE_WRITE"] ?? "true").toLowerCase() === "true",
 
   models: {
     local: {
@@ -40,8 +54,10 @@ export const config = {
     },
   },
 
-  collectionName:
-    process.env["COLLECTION_NAME"] ?? "optimus_codebase",
+  collectionName: process.env["COLLECTION_NAME"] ?? "optimus_codebase",
 
   topK: parseInt(process.env["TOP_K"] ?? "5", 10),
+
+  // One LLM call per chunk, ~5-20s locally. Keep it small.
+  maxDebugChunks: parseInt(process.env["MAX_DEBUG_CHUNKS"] ?? "10", 10),
 } as const;

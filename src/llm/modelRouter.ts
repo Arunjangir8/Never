@@ -1,4 +1,10 @@
-import { config } from "../config.js";
+import { config, type Provider } from "../config.js";
+
+export interface ModelInput {
+  provider: Provider;
+  model: string;
+  apiKey?: string;
+}
 
 const CODE_SIGNALS = [
   "fix", "write", "implement", "refactor", "debug", "create function",
@@ -19,140 +25,25 @@ export function detectQueryType(query: string): "code" | "general" {
   return "general";
 }
 
-export function getModel(type: "code" | "general") {
-  return {
-    provider: "openai" as const,
-    model:config.models.api.openai.model,
-    apiKey: config.models.api.openai.apiKey,
+// Provider comes from .env. Only local swaps model by query type.
+export function getModel(type: "code" | "general"): ModelInput {
+  if (config.provider === "local") {
+    return {
+      provider: "local",
+      model:
+        type === "code"
+          ? config.models.local.coding
+          : config.models.local.general,
+    };
   }
-  return {
-    provider: "local" as const,
-    model:
-      type === "code"
-        ? config.models.local.coding
-        : config.models.local.general,
-  };
+
+  const api = config.models.api[config.provider];
+  if (!api.apiKey) {
+    throw new Error(
+      `PROVIDER=${config.provider} but no API key set. ` +
+        `Set ${config.provider.toUpperCase()}_API_KEY in .env, or use PROVIDER=local.`
+    );
+  }
+
+  return { provider: config.provider, model: api.model, apiKey: api.apiKey };
 }
-
-
-// import { config } from "../config.js";
-// import { generateResponse } from "../llm/ollamaClient.js";
-// import { getClassifierPrompt, getRouterPrompt } from "./promptBuilder.js";
-
-// type QueryType = "code" | "general";
-// type Provider = "local" | "openai" | "gemini" | "anthropic";
-
-// interface ModelInput {
-//   provider: Provider;
-//   model: string;
-//   apiKey?: string;
-// }
-
-
-
-// function getRouterLLM(): ModelInput {
-//   return {
-//     provider: "local",
-//     model: config.models.local.general,
-//   };
-// }
-
-// export async function detectQueryType(query: string): Promise<QueryType> {
-//   try {
-//     const res = await generateResponse(
-//       getClassifierPrompt(),
-//       `Query: ${query}`,
-//       getRouterLLM()
-//     );
-
-//     const answer = res.trim().toLowerCase().split(/\s+/)[0];
-
-//     if (answer === "code") return "code";
-//     if (answer === "general") return "general";
-
-//     return "general";
-//   } catch {
-//     return "general";
-//   }
-// }
-
-// export async function selectProvider(query: string): Promise<Provider> {
-//   try {
-//     const res = await generateResponse(
-//       getRouterPrompt(),
-//       `Query: ${query}`,
-//       getRouterLLM()
-//     );
-
-//     const answer = res.trim().toLowerCase().split(/\s+/)[0];
-
-//     if (
-//       answer === "local" ||
-//       answer === "openai" ||
-//       answer === "gemini" ||
-//       answer === "anthropic"
-//     ) {
-//       return answer;
-//     }
-
-//     return "openai";
-//   } catch {
-//     return "openai";
-//   }
-// }
-
-// export function resolveModel(
-//   provider: Provider,
-//   type: QueryType
-// ): ModelInput {
-//   if (provider === "local") {
-//     return {
-//       provider: "local",
-//       model:
-//         type === "code"
-//           ? config.models.local.coding
-//           : config.models.local.general,
-//     };
-//   }
-
-//   if (provider === "openai") {
-//     return {
-//       provider: "openai",
-//       model: config.models.api.openai.model,
-//       apiKey: config.models.api.openai.apiKey,
-//     };
-//   }
-
-//   if (provider === "gemini") {
-//     return {
-//       provider: "gemini",
-//       model: config.models.api.gemini.model,
-//       apiKey: config.models.api.gemini.apiKey,
-//     };
-//   }
-
-//   if (provider === "anthropic") {
-//     return {
-//       provider: "anthropic",
-//       model: config.models.api.anthropic.model,
-//       apiKey: config.models.api.anthropic.apiKey,
-//     };
-//   }
-
-//   return {
-//     provider: "openai",
-//     model: config.models.api.openai.model,
-//     apiKey: config.models.api.openai.apiKey,
-//   };
-// }
-
-// export async function getModel(query: string): Promise<{
-//   type: QueryType;
-//   model: ModelInput;
-// }> {
-//   const type = await detectQueryType(query);
-//   const provider = await selectProvider(query);
-//   const model = resolveModel(provider, type);
-
-//   return { type, model };
-// }

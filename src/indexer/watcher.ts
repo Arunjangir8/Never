@@ -5,6 +5,10 @@ import { runPipeline } from "../agent/bug-fixer/graph.js";
 
 const DEBOUNCE_MS = 500;
 
+// Off by default. The pipeline takes tens of seconds per chunk locally,
+// which would stall the watcher on every save.
+const AUTOFIX = (process.env["WATCH_AUTOFIX"] ?? "false").toLowerCase() === "true";
+
 export function watchProject(projectPath: string): void {
   const absPath = resolve(projectPath);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -26,7 +30,9 @@ export function watchProject(projectPath: string): void {
   }
 
   const watcher = chokidar.watch(absPath, {
-    ignored: /(node_modules|\.git|dist|build|__pycache__|\.next|coverage)/,
+    // .optimus.bak must be ignored, a fix writes one and with AUTOFIX on
+    // that change event would re-enter the pipeline.
+    ignored: /(node_modules|\.git|dist|build|__pycache__|\.next|coverage|\.optimus\.bak$)/,
     persistent: true,
     ignoreInitial: true,
   });
@@ -36,14 +42,14 @@ export function watchProject(projectPath: string): void {
       debounce(p, async () => {
         const chunks = await indexFile(p);
         console.log(`Indexed: ${p}`);
-        if (chunks.length > 0) await runPipeline(chunks, "watch");
+        if (AUTOFIX && chunks.length > 0) await runPipeline(chunks, "watch");
       })
     )
     .on("change", (p) =>
       debounce(p, async () => {
         const chunks = await indexFile(p);
         console.log(`Re-indexed: ${p}`);
-        if (chunks.length > 0) await runPipeline(chunks, "watch");
+        if (AUTOFIX && chunks.length > 0) await runPipeline(chunks, "watch");
       })
     )
     .on("unlink", (p) =>

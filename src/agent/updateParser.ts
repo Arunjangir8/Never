@@ -42,7 +42,9 @@ function fixLLMEscapes(text: string): string {
   return text.replace(/\\\\"/g, '\\\\\\"');
 }
 
-function tryParseJson(text: string): unknown | null {
+// Pull JSON out of an LLM reply. Tries each candidate until one parses,
+// because small models add fences, prose, raw newlines and bad escapes.
+export function tryParseJson(text: string): unknown | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 

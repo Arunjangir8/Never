@@ -1,29 +1,48 @@
 import * as fs from "fs";
 import * as path from "path";
-
-const ROOT_FOLDER = path.join(process.cwd(), "my-project");
+import { config } from "../config.js";
 
 class FolderFileHandler {
   private root: string;
 
-  constructor(rootPath: string = ROOT_FOLDER) {
+  constructor(rootPath: string = config.projectPath) {
+    // No fs check here, a throw in the constructor kills the CLI on import.
+    // index.ts calls verifyRoot() after the banner.
     this.root = path.resolve(rootPath);
+  }
 
+  public get rootPath(): string {
+    return this.root;
+  }
+
+  public verifyRoot(): void {
     if (!fs.existsSync(this.root)) {
-      throw new Error("my-project folder not found");
+      throw new Error(
+        `PROJECT_PATH does not exist: ${this.root}\n` +
+          `  Set PROJECT_PATH in .env to the folder Optimus should work on.`
+      );
     }
   }
 
   private resolveSafePath(relativePath: string): string {
     const fullPath = path.resolve(this.root, relativePath);
+    const rel = path.relative(this.root, fullPath);
 
-    if (!fullPath.startsWith(this.root)) {
-      console.error(`Attempted access outside root: ${fullPath}`);
-      console.error(`Root path: ${this.root}`);
-      throw new Error("Access outside root is not allowed");
+    // startsWith(root) is not enough: "/proj-evil" would pass for root "/proj".
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error(
+        `Access outside PROJECT_PATH is not allowed: ${relativePath}`
+      );
     }
 
     return fullPath;
+  }
+
+  // Snapshot before overwrite so /revert works.
+  private backup(filePath: string): void {
+    if (!config.backupBeforeWrite) return;
+    if (!fs.existsSync(filePath)) return;
+    fs.copyFileSync(filePath, `${filePath}.optimus.bak`);
   }
 
   private generateTree(dir: string, prefix = ""): string {
@@ -83,6 +102,13 @@ class FolderFileHandler {
   public updateFile(relativePath: string, newContent: string): void {
     const filePath = this.resolveSafePath(relativePath);
 
+    if (!fs.existsSync(filePath) && !config.allowNewFiles) {
+      throw new Error(
+        `Refusing to create ${relativePath} (ALLOW_NEW_FILES=false)`
+      );
+    }
+
+    this.backup(filePath);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, newContent, "utf-8");
   }
@@ -108,6 +134,7 @@ class FolderFileHandler {
 
     lines.splice(start, deleteCount, ...newLines);
 
+    this.backup(filePath);
     fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
   }
 
@@ -134,11 +161,17 @@ class FolderFileHandler {
       content = content.replace(find, replace);
     }
 
+    this.backup(filePath);
     fs.writeFileSync(filePath, content, "utf-8");
   }
 
-
   public createFile(relativePath: string, content: string = ""): void {
+    if (!config.allowNewFiles) {
+      throw new Error(
+        `Refusing to create ${relativePath} (ALLOW_NEW_FILES=false)`
+      );
+    }
+
     const filePath = this.resolveSafePath(relativePath);
 
     if (fs.existsSync(filePath)) {
@@ -147,6 +180,20 @@ class FolderFileHandler {
 
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, "utf-8");
+  }
+
+  public revert(relativePath: string): void {
+    const filePath = this.resolveSafePath(relativePath);
+    const bak = `${filePath}.optimus.bak`;
+
+    if (!fs.existsSync(bak)) {
+      throw new Error(
+        `No backup found for ${relativePath}. ` +
+          `Backups need BACKUP_BEFORE_WRITE=true (default) at the time of the edit.`
+      );
+    }
+
+    fs.copyFileSync(bak, filePath);
   }
 }
 

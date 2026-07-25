@@ -1,7 +1,16 @@
 node_modules/
 dist/
 build/
-/*.env
-/*.env.example
-friction-less-experience-backend
+.vscode/
+
+# Secrets. .env.example is deliberately NOT ignored — it is the template
+# juniors copy, and must contain placeholders only.
+.env
+.env.local
+.env.*.local
+
+# Local state
+chroma-data/
+*.optimus.bak
 my-project/
+friction-less-experience-backend

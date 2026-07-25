@@ -1,17 +1,23 @@
+import { config } from "../config.js";
 import { FileChunk, RedFinding } from "../types.js";
 
+// Patches need an exact byte-for-byte snippet match. Small local models
+// can't do that, so they only get the whole-file update types.
+const PATCHES_ENABLED = config.provider !== "local";
 
-// PROMPT FOR THE MAIN OPTIMUS ASSISTANT
+function updateTypeRules(): string {
+  if (!PATCHES_ENABLED) {
+    return `UPDATE TYPES (only these two — never use "patchs"):
+- "fullfile" → replace the entire file, output the complete new content
+- "createNew" → create a new file
 
-export function buildSystemPrompt(context: string): string {
-  return `You are a coding agent that modifies files.
-Analyze the requested change and return a structured JSON response.
+IMPORTANT:
+- Always output the WHOLE file, never a fragment or a "..." placeholder
+- NEVER invent code that is not in the context and not asked for
+- Keep everything unrelated to the request exactly as it is`;
+  }
 
-STRICT RULES:
-- Output ONLY valid JSON. No markdown, no explanation.
-- Paths must be strictly relative (e.g. "index.ts")
-
-UPDATE TYPES:
+  return `UPDATE TYPES:
 - "fullfile" → replace entire file
 - "patchs" → modify specific parts using find/replace
 - "createNew" → create new file
@@ -23,45 +29,53 @@ IMPORTANT:
 
 PATCH RULES (FIND & REPLACE):
 - Each patch must include:
-  - "find": exact existing code (must match exactly)
+  - "find": exact existing code, copied EXACTLY from the context
   - "replace": updated code
-
-- "find" must:
-  - Be copied EXACTLY from provided context
-  - Be UNIQUE in the file
-  - Be large enough to avoid accidental matches
-
-- If multiple matches possible → DO NOT patch → use fullfile
+- "find" must be UNIQUE in the file and large enough to avoid accidental matches
+- If multiple matches are possible → DO NOT patch → use fullfile
 
 FAILSAFE:
 - If exact match is uncertain → use fullfile
-- NEVER produce risky patches
+- NEVER produce risky patches`;
+}
+
+function schemaBlock(): string {
+  const patchField = PATCHES_ENABLED
+    ? `\n    "patchs": [{ "find": "exact old code", "replace": "new code" }],`
+    : "";
+
+  return `SCHEMA:
+{
+  "<relative path>": {
+    "updateType": ${PATCHES_ENABLED ? `"fullfile" | "patchs" | "createNew"` : `"fullfile" | "createNew"`},
+    "summary": "short summary",
+    "reason": "why needed",
+    "fullfile": "entire file content (updateType=fullfile)",${patchField}
+    "content": "entire file content (updateType=createNew)"
+  }
+}
+
+- Include ONLY the field matching updateType
+- The top-level key is the file path, e.g. "src/index.ts"`;
+}
+
+// PROMPT FOR THE MAIN OPTIMUS ASSISTANT
+
+export function buildSystemPrompt(context: string): string {
+  return `You are a coding agent that edits files in a project and creates new ones when needed.
+Analyze the requested change and return a structured JSON response.
+
+STRICT RULES:
+- Output ONLY valid JSON. No markdown, no code fences, no explanation.
+- Paths must be strictly relative to the project root (e.g. "index.ts", "src/api.ts")
+
+${updateTypeRules()}
 
 STRING RULES:
 - Escape newlines as \\n
 - Escape quotes as \\"
 
-SCHEMA:
-{
-  "<relative path>": {
-    "updateType": "fullfile" | "patchs" | "createNew",
-    "summary": "short summary",
-    "reason": "why needed",
-
-    "fullfile": "entire file content",
-    "patchs": [
-      {
-        "find": "exact old code",
-        "replace": "new code"
-      }
-    ],
-    "content": "entire file content"
-  }
-}
-
-RULES:
-- Only include field matching updateType
-- Keep patches minimal and precise
+${schemaBlock()}
 
 FILE CONTEXT:
 ${context}`;
@@ -83,31 +97,6 @@ export function buildUserPrompt(query: string): string {
   return `${prefix}${query}`;
 }
 
-export function getClassifierPrompt() {
-  return `You are a query classifier for a coding assistant.
-    Classify the user's query as exactly one of:
-    - "code"
-    - "general"
-
-    Reply with ONLY one word.
-    No explanation.`
-}
-
-export function getRouterPrompt() {
-  return `You are a model router.
-
-      Choose the best provider for the query.
-
-      Options:
-      - local      → simple, fast tasks
-      - openai     → general chat and coding
-      - gemini     → research and knowledge-heavy queries
-      - anthropic  → deep reasoning and complex tasks
-
-      Reply with ONLY one word:
-      local | openai | gemini | anthropic
-      No explanation.`
-}
 
 // RED & BLUE AGENT PROMPTS
 
@@ -159,57 +148,22 @@ export function buildBlueSystemPrompt(): string {
 You must respond with ONLY valid JSON — no explanation, no markdown, no code fences.
 
 STRICT RULES:
-- Output ONLY valid JSON. No markdown, no explanation.
+- Output ONLY valid JSON. No markdown, no code fences, no explanation.
 - Paths must be strictly relative (e.g. "index.ts")
 
-UPDATE TYPES:
-- "fullfile" → replace entire file
-- "patchs" → modify specific parts using find/replace
-- "createNew" → create new file
-
-
-PATCH RULES (FIND & REPLACE):
-- Each patch must include:
-  - "find": exact existing code (must match exactly)
-  - "replace": updated code
-
-- "find" must:
-  - Be copied EXACTLY from provided context
-  - Be UNIQUE in the file
-  - Be large enough to avoid accidental matches
-
-- If multiple matches possible → DO NOT patch → use fullfile
+${updateTypeRules()}
 
 STRING RULES:
 - Escape newlines as \\n
 - Escape quotes as \\"
 
-Return this exact schema:
-{
-  "<relative path>": {
-    "updateType": "fullfile" | "patchs" | "createNew",
-    "summary": "short summary",
-    "reason": "why needed",
+${schemaBlock()}
 
-    "fullfile": "entire file content",
-    "patchs": [
-      {
-        "find": "exact old code",
-        "replace": "new code"
-      }
-    ],
-    "content": "entire file content"
-  }
-}
-
-Rules:
-- Generate one fix per issue across bugs, edge_cases, and risks
-- "fix" must be concrete — actual code snippet or specific actionable change, never vague advice
-- "affected" must exactly match the "affected" field from the finding you are fixing
-- "explanation" must describe what the fix does and why it resolves the issue
-- If two issues have the same fix, still list them separately
-- Never omit a key even if empty
-- If no fixes can be generated return "fixes" as an empty array []`;
+FIX RULES:
+- Address every issue you can from bugs, edge_cases and risks in one update per file
+- Fixes must be concrete code, never vague advice like "add validation"
+- Change nothing that is unrelated to the listed issues
+- If you cannot fix anything, return {}`;
 }
 
 export function buildBlueUserPrompt(finding: RedFinding): string {

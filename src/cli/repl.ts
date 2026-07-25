@@ -1,20 +1,16 @@
 import readline from "readline";
 import { runQuery } from "../agent/orchestrator.js";
-import { handleCommand, registerClearHistory } from "./commands.js";
+import { handleCommand } from "./commands.js";
 import { printSeparator, printError } from "./display.js";
 
 const PROMPT = "\x1b[36moptimus\x1b[0m \x1b[1m❯\x1b[0m ";
-const MAX_HISTORY = 6;
 
-interface Turn {
-  role: "user" | "assistant";
-  content: string;
-}
-
+// Each query is stateless, context comes from the vector store. Add a Turn[]
+// here and pass it to runQuery if follow-ups like "now rename it" are needed.
 export async function startRepl(): Promise<void> {
-  const history: Turn[] = [];
-
-  registerClearHistory(() => history.splice(0));
+  console.log(
+    "\x1b[2mAsk a question, or type /help for commands. File changes always ask before writing.\x1b[0m\n"
+  );
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -36,9 +32,6 @@ export async function startRepl(): Promise<void> {
 
     const wasCommand = await handleCommand(input);
     if (wasCommand) { rl.prompt(); continue; }
-
-    history.push({ role: "user", content: input });
-    if (history.length > MAX_HISTORY * 2) history.splice(0, 2);
 
     printSeparator();
     try {

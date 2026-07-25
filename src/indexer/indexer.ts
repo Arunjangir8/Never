@@ -12,7 +12,7 @@ export async function indexFile(filePath: string): Promise<FileChunk[]> {
   if (chunks.length === 0) return [];
   const embeddings = await generateEmbeddings(chunks.map((c) => c.content));
   await upsertChunks(chunks, embeddings);
-  return chunks;;
+  return chunks;
 }
 
 export async function deleteFile(filePath: string): Promise<void> {

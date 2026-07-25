@@ -21,18 +21,6 @@ export interface DirectFile {
   content: string;
 }
 
-export interface AgentResponse {
-  answer: string;
-  sources: string[];
-  model: string;
-}
-
-export interface CodeUpdate {
-  filePath: string;
-  newContent: string;
-  description: string;
-}
-
 export interface FileChunk {
   filePath: string;
   content: string;
@@ -57,29 +45,7 @@ export interface RedFinding {
   risks: Issue[];
 }
 
-// Blue Agent 
-
-export interface Fix {
-  title: string;
-  explanation: string;
-  fix: string;        
-  affected: string;  
-}
-
-export interface BlueFix {
-  chunk_id: string; 
-  file: string;
-  fixes: Fix[];
-}
-
-//  Graph State 
+//  Graph State
+//  Blue Agent returns FileUpdate[], see agent/bug-fixer/blueAgent.ts
 
 export type PipelineMode = "debug" | "watch";
-
-export interface AgentState {
-  chunks: FileChunk[];
-  mode: PipelineMode;
-  redFindings: RedFinding[];
-  userApprovedFix: boolean;
-  blueUpdates: FileUpdate[];
-}

@@ -1,269 +1,218 @@
 # Optimus AI Agent
 
-A fully local RAG-based coding assistant. Indexes your codebase into ChromaDB, retrieves relevant context on every query, and streams answers from Ollama — no cloud, no API keys, no data leaving your machine.
+A local RAG coding assistant. It indexes a codebase into ChromaDB, retrieves the
+relevant chunks for your question, and answers with a model running on your own
+machine via Ollama. No API keys, no data leaving your laptop.
+
+It can also **edit files** — always after showing you the change and asking.
 
 ---
 
-## Prerequisites
+## Quickstart
 
-Before you start, make sure the following are installed and running:
+Four things need to be true before `npm run dev` works. In order:
 
-- [ ] **Node.js 18+** — `node --version`
-- [ ] **Ollama** — local LLM runtime
-- [ ] **ChromaDB** — local vector database
-- [ ] **Required models pulled** (see below)
-
-### Install Ollama
+### 1. Node 18+
 
 ```bash
-# macOS
-brew install ollama
-
-# Linux / WSL
-curl -fsSL https://ollama.ai/install.sh | sh
+node --version
 ```
 
-### Pull required models
+### 2. Ollama running, with models pulled
 
 ```bash
-ollama pull gemma:2b           # general Q&A (~1.7 GB)
-ollama pull codellama:7b       # code tasks (~3.8 GB)
-ollama pull nomic-embed-text   # embeddings (~274 MB)
+brew install ollama                 # macOS  (Linux: curl -fsSL https://ollama.ai/install.sh | sh)
+ollama serve                        # leave this running in its own terminal
+
+ollama pull gemma:2b                # chat / explanations   (~1.7 GB)
+ollama pull qwen2.5-coder:7b        # code edits            (~4.7 GB)
+ollama pull nomic-embed-text        # embeddings, required  (~274 MB)
 ```
 
-### Install and start ChromaDB
+`nomic-embed-text` is not optional — embeddings always run locally, even if you
+switch to a hosted provider.
+
+### 3. ChromaDB running
 
 ```bash
 pip install chromadb
-chroma run --path ./chroma-data
+chroma run --path ./chroma-data     # leave this running too; listens on :8000
 ```
 
-ChromaDB will listen on `http://localhost:8000` by default.
-
----
-
-## Installation
+### 4. Install and configure
 
 ```bash
-# 1. Clone / enter the project
-cd optimus-ai-agent
-
-# 2. Install Node dependencies
 npm install
-
-# 3. Copy and configure environment
 cp .env.example .env
 ```
+
+Then open `.env` and set **`PROJECT_PATH`** to the folder you want Optimus to
+read and edit. That single setting is the whole security boundary — Optimus
+cannot read or write outside it.
+
+```bash
+PROJECT_PATH=../my-app
+```
+
+### Run it
+
+```bash
+npm run index      # one-time: build the vector index
+npm run dev        # start chatting
+```
+
+Inside the chat, `/status` prints exactly which provider, models and paths are
+live — check it first whenever something behaves unexpectedly.
 
 ---
 
 ## Configuration
 
-Edit `.env` — every variable has a sensible default:
+Every variable has a working default. You normally only touch `PROJECT_PATH`.
 
-| Variable | Default | Description |
+| Variable | Default | What it does |
 |---|---|---|
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server address |
-| `CHROMA_URL` | `http://localhost:8000` | ChromaDB server address |
-| `PROJECT_PATH` | `./my-project` | Path to the codebase you want to index |
-| `GENERAL_MODEL` | `gemma:2b` | Model used for explanations and Q&A |
-| `CODE_MODEL` | `codellama:7b` | Model used for code generation and fixes |
-| `EMBED_MODEL` | `nomic-embed-text` | Embedding model for vector search |
-| `COLLECTION_NAME` | `optimus_codebase` | ChromaDB collection name |
-| `TOP_K` | `5` | Number of chunks retrieved per query |
+| `PROVIDER` | `local` | `local` \| `openai` \| `gemini` \| `anthropic` |
+| `PROJECT_PATH` | `./my-project` | Folder Optimus reads and edits. Hard boundary. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
+| `CHROMA_URL` | `http://localhost:8000` | ChromaDB server |
+| `COLLECTION_NAME` | `optimus_codebase` | ChromaDB collection |
+| `TOP_K` | `5` | Chunks retrieved per query |
+| `LOCAL_GENERAL_MODEL` | `gemma:2b` | Used for explanations and chat |
+| `LOCAL_CODE_MODEL` | `qwen2.5-coder:7b` | Used for code edits and the bug-fixer |
+| `LOCAL_EMBED_MODEL` | `nomic-embed-text` | Embeddings. Always local. |
+| `ALLOW_NEW_FILES` | `false` | Let the model create files that don't exist |
+| `BACKUP_BEFORE_WRITE` | `true` | Write `<file>.optimus.bak` before overwriting |
+| `MAX_DEBUG_CHUNKS` | `10` | Cap on chunks per `npm run debug` run |
+| `WATCH_AUTOFIX` | `false` | Run the bug-fixer on every save in watch mode |
 
-```bash
-# Minimal .env for a project at ~/code/my-app
-PROJECT_PATH=../my-app
-```
-
----
-
-## Usage
-
-### First-time indexing
-
-Index your project before querying. This scans all source files, chunks them, generates embeddings, and stores them in ChromaDB.
-
-```bash
-npm run index
-```
-
-Output:
-```
-Found 42 files. Indexing...
-[42/42] Indexed: src/routes/user.ts
-Indexed 42 files, 318 chunks total.
-```
-
-### Start the interactive REPL
-
-```bash
-npm run dev
-```
-
-On startup, Optimus checks Ollama and ChromaDB connectivity, then drops you into the REPL:
-
-```
-optimus ❯ 
-```
-
-### Watch mode (index + auto-reindex on changes)
-
-```bash
-npm run watch
-```
-
-Starts a full index, then watches the project directory. Any file add/change/delete triggers an automatic re-index within 500ms.
-
-### Production build
-
-```bash
-npm run build    # compiles TypeScript → dist/
-npm start        # runs compiled output
-```
+To use a hosted model instead, set `PROVIDER=openai` (or `gemini` / `anthropic`)
+and the matching `*_API_KEY`. Put real keys in `.env` only — it is gitignored.
+`.env.example` must stay placeholder-only.
 
 ---
 
-## Example queries
+## Commands
 
-```
-optimus ❯ explain the authentication flow in this project
-```
-> Routes to `gemma:2b`. Retrieves auth-related chunks and explains the flow.
+```bash
+npm run dev              # interactive chat (default)
+npm run index            # index PROJECT_PATH into ChromaDB
+npm run watch            # index, then re-index on every save
+npm run debug -- <file>  # run the Red/Blue bug-fixer on one file
+npm run debug            # run it across the project (slow — see note below)
 
+npm test                 # unit tests
+npm run typecheck        # tsc --noEmit
+npm run build && npm start
 ```
-optimus ❯ fix the bug in src/routes/user.ts
-```
-> Routes to `codellama:7b`. Reads `src/routes/user.ts` directly (file path detected), streams a fix, then offers to apply it.
 
-```
-optimus ❯ add input validation to the createUser function
-```
-> Routes to `codellama:7b`. Finds `createUser` via vector search, generates updated code with validation.
-
-```
-optimus ❯ refactor the database connection to use connection pooling
-```
-> Routes to `codellama:7b`. Retrieves DB-related chunks, proposes a refactored version with connection pooling.
-
----
-
-## REPL commands
+### In-chat commands
 
 | Command | Description |
 |---|---|
-| `/index` | Re-index the entire project |
-| `/index src/auth.ts` | Index a single file |
+| `/status` | Show active provider, models, project path, safety rails |
+| `/index` | Re-index the whole project |
+| `/index src/auth.ts` | Index one file (path relative to `PROJECT_PATH`) |
 | `/watch` | Start the file watcher |
-| `/clear` | Clear conversation history |
-| `/models` | List available Ollama models |
-| `/revert src/auth.ts` | Restore file from `.optimus.bak` backup |
-| `/help` | Show all commands |
-| `/exit` | Exit cleanly |
+| `/models` | List pulled Ollama models |
+| `/revert src/auth.ts` | Restore a file from its `.optimus.bak` |
+| `/clear` | Clear the screen |
+| `/help` | Show commands |
+| `/exit` | Quit |
 
 ---
 
-## How code updates work
+## How file edits work
 
-When Optimus generates a code change, it wraps it in structured markers:
+1. Your question is classified as **code** or **general** (keyword match, see
+   `src/llm/modelRouter.ts`).
+2. General → answered as plain prose, nothing is written.
+3. Code → the model returns JSON describing per-file updates:
+   - `fullfile` — replace the whole file
+   - `createNew` — create a file (needs `ALLOW_NEW_FILES=true`)
+   - `patchs` — find/replace (**hosted providers only**; local models can't
+     reproduce a snippet byte-for-byte reliably enough to be safe)
+4. Optimus prints each proposed change and **asks before writing anything**.
+5. On approval it backs up each file to `<file>.optimus.bak`, then writes.
+6. `/revert <file>` restores the backup.
 
-```
-===START_UPDATE: src/routes/user.ts===
-export async function createUser(data: unknown) {
-  const parsed = userSchema.parse(data);   // added validation
-  return db.users.create(parsed);
-}
-===END_UPDATE===
-```
+Nothing outside `PROJECT_PATH` can be touched, and a patch that matches zero or
+more than one place in a file is rejected rather than guessed at.
 
-After streaming completes, Optimus:
+---
 
-1. **Parses** all `START_UPDATE` / `END_UPDATE` blocks from the response
-2. **Shows a colored diff** — red for removed lines, green for added lines, with 3 lines of context
-3. **Asks for confirmation** before touching any file (30s timeout → auto-decline)
-4. **Applies targeted replacement** — finds the function/class by name and replaces only that block
-5. **Backs up** the original as `{file}.optimus.bak` before writing
+## The Red/Blue bug-fixer
 
-To undo any applied patch:
+`npm run debug -- src/thing.ts` runs a two-agent pass:
 
-```
-optimus ❯ /revert src/routes/user.ts
-```
+- **Red** reads each chunk and reports bugs, edge cases and risks.
+- You approve sending those findings on.
+- **Blue** turns the findings into concrete file updates.
+- You approve again before anything is written.
+
+**Give it one file at a time.** Each chunk is one LLM round-trip, which is
+5–20 s on a local 7B model. Running it project-wide is why `MAX_DEBUG_CHUNKS`
+exists (default 10); the run tells you when it truncates.
+
+---
+
+## Getting good results from small local models
+
+- **Ask for one thing per message.** "add input validation to createUser" works;
+  "refactor the whole auth layer" does not.
+- **Name the file** — `fix the off-by-one in src/utils/paging.ts`. A literal path
+  in your message bypasses vector search and feeds the model the real file.
+- **Re-index after editing outside Optimus** (`/index <file>`), or retrieval
+  serves stale chunks.
+- **A bigger code model is the highest-leverage change.** `gemma:2b` cannot
+  reliably produce a whole valid file; `qwen2.5-coder:7b` can. If output arrives
+  malformed, that's usually the cause.
+- Keep `ALLOW_NEW_FILES=false` until you trust the setup — it stops a confused
+  model from scattering files through your project.
 
 ---
 
 ## System requirements
 
-Optimized for **Apple Silicon (M1/M2/M3) with 8 GB RAM**.
+Runs on an 8 GB Apple Silicon Mac, one model at a time (Ollama unloads the
+previous one automatically).
 
-- Run **one model at a time** — Ollama unloads the previous model automatically
-- `gemma:2b` uses ~2 GB RAM, `codellama:7b` uses ~4 GB RAM
-- Embedding (`nomic-embed-text`) is lightweight and runs alongside either model
-- For 8 GB machines, avoid running ChromaDB and Ollama simultaneously with other heavy apps
+- `gemma:2b` ≈ 2 GB RAM, `qwen2.5-coder:7b` ≈ 5 GB
+- `nomic-embed-text` is small and runs alongside either
+- On 8 GB, don't run other heavy apps next to Ollama + ChromaDB
 
 ---
 
 ## Troubleshooting
 
-### Ollama not running
+| Symptom | Cause / fix |
+|---|---|
+| `✖ Ollama is not reachable` | `ollama serve` not running, or wrong `OLLAMA_BASE_URL` |
+| `✖ ChromaDB is not reachable` | `chroma run --path ./chroma-data` not running, or wrong `CHROMA_URL` (default is **8000**) |
+| `PROJECT_PATH does not exist` | Fix `PROJECT_PATH` in `.env` |
+| `⚠ No valid JSON detected in LLM response` | Model too small for structured output — use a 7B coder model |
+| `Refusing to create X (ALLOW_NEW_FILES=false)` | Intentional. Set `ALLOW_NEW_FILES=true` if you want new files. |
+| `Patch target is ambiguous` | The snippet appears more than once; retry, or switch to a `fullfile` edit |
+| `No backup found for X` | The edit ran with `BACKUP_BEFORE_WRITE=false` |
+| Answers cite code you already deleted | Stale index — `/index` again |
+
+---
+
+## Layout
 
 ```
-✖ Ollama is not running.
-```
-
-```bash
-ollama serve          # start the server
-ollama list           # verify models are pulled
-```
-
-### ChromaDB connection refused
-
-```
-✖ ChromaDB is not running.
-```
-
-```bash
-chroma run --path ./chroma-data
-# or with a specific port:
-chroma run --path ./chroma-data --port 8000
-```
-
-Make sure `CHROMA_URL` in `.env` matches the port ChromaDB is listening on.
-
-### Out of memory / model crashes
-
-Switch to `gemma:2b` for all tasks by setting both models to the same value:
-
-```bash
-# .env
-GENERAL_MODEL=gemma:2b
-CODE_MODEL=gemma:2b
-```
-
-Or reduce context size by lowering `TOP_K`:
-
-```bash
-TOP_K=3
-```
-
-### Empty context returned
-
-The vector store has no data. Re-run the indexer:
-
-```bash
-npm run index
-```
-
-If the project path is wrong, check `PROJECT_PATH` in `.env`. The path is resolved relative to the project root.
-
-### Embeddings are slow
-
-Embedding is the bottleneck on first index. Subsequent runs only re-embed changed files (via the watcher). To speed up initial indexing, `nomic-embed-text` is the fastest Ollama embedding model — do not swap it for a larger one on 8 GB RAM.
-
-### TypeScript build errors after pulling updates
-
-```bash
-npm install          # sync dependencies
-npx tsc --noEmit     # check for type errors
+src/
+  index.ts           entry point, CLI modes, startup checks
+  config.ts          all env parsing, single source of truth
+  cli/               REPL, slash commands, terminal output
+  indexer/           scan → chunk → embed → ChromaDB
+  retriever/         query → chunks → prompt context
+  llm/               provider clients, model routing, prompts
+  agent/
+    orchestrator.ts  the chat pipeline (LangGraph)
+    updateParser.ts  tolerant JSON → FileUpdate[]
+    applyUpdates.ts  the only place that writes to disk
+    bug-fixer/       Red + Blue agent pipeline
+  utils/
+    folderFileHandler.ts   sandboxed file I/O, backups
 ```

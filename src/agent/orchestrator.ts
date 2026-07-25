@@ -3,7 +3,14 @@ import { detectQueryType, getModel } from "../llm/modelRouter.js";
 import { buildSystemPrompt, buildGeneralSystemPrompt, buildUserPrompt } from "../llm/promptBuilder.js";
 import { streamResponse } from "../llm/ollamaClient.js";
 import { parseUpdates } from "./updateParser.js";
-import { printSources, printSeparator, printError } from "../cli/display.js";
+import {
+  printSources,
+  printSeparator,
+  printError,
+  printBlueFindings,
+} from "../cli/display.js";
+import { askUserPermission } from "../cli/prompt.js";
+import { applyUpdates } from "./applyUpdates.js";
 import { folderFileHandler } from "../utils/folderFileHandler.js";
 
 import { StateGraph, END, START, Annotation } from "@langchain/langgraph";
@@ -79,25 +86,19 @@ async function parseAndApply(state: AgentStateType): Promise<Partial<AgentStateT
   const updates = parseUpdates(state.fullResponse);
   if (updates.length === 0) return {};
 
-  for (const update of updates) {
-    console.log(`\n${update.summary}`);
-    try {
-      if (update.type === "fullfile") {
-        folderFileHandler.updateFile(update.relativePath, update.content);
-        console.log(`\x1b[32m✔ fullfile applied: ${update.relativePath}\x1b[0m`);
-      } else if (update.type === "patchs") {
-        folderFileHandler.applyPatches(update.relativePath, update.patches);
-        console.log(`\x1b[32m✔ ${update.patches.length} patch(es) applied: ${update.relativePath}\x1b[0m`);
-      } else if (update.type === "createNew") {
-        folderFileHandler.createFile(update.relativePath, update.content);
-        console.log(`\x1b[32m✔ file created: ${update.relativePath}\x1b[0m`);
-      }
-    } catch (err) {
-      printError(`Failed on ${update.relativePath}: ${err instanceof Error ? err.message : String(err)}`);
-    }
+  // Always show the change and ask before writing.
+  printBlueFindings(updates);
+
+  const approved = await askUserPermission(
+    `\n\x1b[33mApply ${updates.length} change(s) to ${folderFileHandler.rootPath}? (y/n): \x1b[0m`
+  );
+
+  if (!approved) {
+    console.log("\n\x1b[2mDiscarded. No files were changed.\x1b[0m");
+    return {};
   }
 
-  console.log("\n\x1b[32m✓ All changes applied successfully.\x1b[0m");
+  applyUpdates(updates);
   return {};
 }
 
