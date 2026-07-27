@@ -11,6 +11,8 @@ build/
 
 # Local state
 chroma-data/
+.optimus-logs/
+graphify-out/
 *.optimus.bak
 my-project/
 friction-less-experience-backend

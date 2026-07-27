@@ -10,59 +10,77 @@ It can also **edit files** — always after showing you the change and asking.
 
 ## Quickstart
 
-Four things need to be true before `npm run dev` works. In order:
-
-### 1. Node 18+
+Install the two servers once. Optimus starts them for you after that.
 
 ```bash
-node --version
-```
-
-### 2. Ollama running, with models pulled
-
-```bash
-brew install ollama                 # macOS  (Linux: curl -fsSL https://ollama.ai/install.sh | sh)
-ollama serve                        # leave this running in its own terminal
-
-ollama pull gemma:2b                # chat / explanations   (~1.7 GB)
-ollama pull qwen2.5-coder:7b        # code edits            (~4.7 GB)
-ollama pull nomic-embed-text        # embeddings, required  (~274 MB)
-```
-
-`nomic-embed-text` is not optional — embeddings always run locally, even if you
-switch to a hosted provider.
-
-### 3. ChromaDB running
-
-```bash
+brew install ollama         # macOS (Linux: curl -fsSL https://ollama.ai/install.sh | sh)
 pip install chromadb
-chroma run --path ./chroma-data     # leave this running too; listens on :8000
 ```
 
-### 4. Install and configure
+Then:
 
 ```bash
 npm install
 cp .env.example .env
 ```
 
-Then open `.env` and set **`PROJECT_PATH`** to the folder you want Optimus to
-read and edit. That single setting is the whole security boundary — Optimus
-cannot read or write outside it.
+Open `.env` and set **`PROJECT_PATH`** to the folder you want Optimus to read
+and edit. That one setting is the whole security boundary, Optimus cannot touch
+anything outside it.
 
 ```bash
 PROJECT_PATH=../my-app
 ```
 
-### Run it
+Run it:
 
 ```bash
 npm run index      # one-time: build the vector index
 npm run dev        # start chatting
 ```
 
-Inside the chat, `/status` prints exactly which provider, models and paths are
-live — check it first whenever something behaves unexpectedly.
+On startup Optimus will:
+
+1. Start **Ollama** if it isn't already running
+2. Start **ChromaDB** if it isn't already running
+3. Check the models it needs, and offer to `ollama pull` any that are missing
+4. Drop you into the chat
+
+`/exit` (or Ctrl+C outside the chat) shuts the servers back down.
+
+When you quit, Optimus stops the servers it started.
+
+The two rules that matter:
+
+- **Already running?** Optimus reuses it and never double-starts, whether it's
+  in this terminal, another one, or the Ollama desktop app.
+- **Started by someone else?** Optimus never stops it on exit. Only servers it
+  launched itself get shut down, so quitting can't kill work you had running.
+
+Set `AUTO_START=false` to run the servers yourself, or `AUTO_STOP=false` to
+leave Optimus-started ones up after you quit.
+
+Server output goes to `.optimus-logs/`. Each run starts from an empty log, and
+a log is deleted once its server is stopped, so nothing accumulates. The one
+exception is a server that **failed to start**: its log is kept on purpose,
+because it's the only clue why.
+
+Running two copies of Optimus at once is the one rough edge: the second reuses
+the first's servers, so whichever quits first takes them down. Use
+`AUTO_STOP=false` if you work that way.
+
+Inside the chat, `/status` prints the live provider, models and paths. Check it
+first when something behaves unexpectedly.
+
+### Models
+
+Optimus pulls these on first run if you approve:
+
+| Model | Size | Used for |
+|---|---|---|
+| `nomic-embed-text` | ~274 MB | Embeddings. Always needed, even on a hosted provider. |
+| `gemma:2b` | ~1.7 GB | Chat and explanations |
+| `qwen2.5-coder:7b` | ~4.7 GB | Code edits and the bug-fixer |
 
 ---
 
@@ -76,6 +94,10 @@ Every variable has a working default. You normally only touch `PROJECT_PATH`.
 | `PROJECT_PATH` | `./my-project` | Folder Optimus reads and edits. Hard boundary. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
 | `CHROMA_URL` | `http://localhost:8000` | ChromaDB server |
+| `CHROMA_PATH` | `./chroma-data` | Where ChromaDB stores data when Optimus starts it |
+| `AUTO_START` | `true` | Start Ollama/ChromaDB if they aren't running |
+| `AUTO_STOP` | `true` | On exit, stop only the servers Optimus started |
+| `AUTO_PULL_MODELS` | `false` | Pull missing models without asking |
 | `COLLECTION_NAME` | `optimus_codebase` | ChromaDB collection |
 | `TOP_K` | `5` | Chunks retrieved per query |
 | `LOCAL_GENERAL_MODEL` | `gemma:2b` | Used for explanations and chat |
@@ -187,8 +209,10 @@ previous one automatically).
 
 | Symptom | Cause / fix |
 |---|---|
-| `✖ Ollama is not reachable` | `ollama serve` not running, or wrong `OLLAMA_BASE_URL` |
-| `✖ ChromaDB is not reachable` | `chroma run --path ./chroma-data` not running, or wrong `CHROMA_URL` (default is **8000**) |
+| `✖ Ollama is not installed` | `brew install ollama` |
+| `✖ ChromaDB is not installed` | `pip install chromadb`, then check `which chroma` |
+| `✖ X did not come up within Ns` | Read `.optimus-logs/x.log`, kept for exactly this case. Usually the port is taken by something else. |
+| `✖ X is not reachable` + "Remote host" | `CHROMA_URL`/`OLLAMA_BASE_URL` points off-machine, so Optimus can't start it. Start it there, or point back at localhost. |
 | `PROJECT_PATH does not exist` | Fix `PROJECT_PATH` in `.env` |
 | `⚠ No valid JSON detected in LLM response` | Model too small for structured output — use a 7B coder model |
 | `Refusing to create X (ALLOW_NEW_FILES=false)` | Intentional. Set `ALLOW_NEW_FILES=true` if you want new files. |
@@ -214,5 +238,6 @@ src/
     applyUpdates.ts  the only place that writes to disk
     bug-fixer/       Red + Blue agent pipeline
   utils/
+    services.ts            starts Ollama/ChromaDB, checks models
     folderFileHandler.ts   sandboxed file I/O, backups
 ```

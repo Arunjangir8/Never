@@ -7,6 +7,7 @@ import { watchProject } from "./indexer/watcher.js";
 import { startRepl } from "./cli/repl.js";
 import { folderFileHandler } from "./utils/folderFileHandler.js";
 import { runPipeline } from "./agent/bug-fixer/graph.js";
+import { ensureServices } from "./utils/services.js";
 import type { FileChunk } from "./types.js";
 
 const USAGE = `
@@ -18,41 +19,6 @@ const USAGE = `
 
   Config lives in .env. Run /status inside the chat to see what's active.
 `;
-
-async function checkService(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    return res.ok || res.status < 500;
-  } catch {
-    return false;
-  }
-}
-
-async function checkConnectivity(): Promise<boolean> {
-  // Embeddings always use Ollama, so it's needed whatever PROVIDER is.
-  const [ollamaOk, chromaOk] = await Promise.all([
-    checkService(config.ollamaBaseUrl),
-    checkService(config.chromaUrl + "/api/v1/heartbeat"),
-  ]);
-
-  if (!ollamaOk) {
-    printError(`Ollama is not reachable at ${config.ollamaBaseUrl}`);
-    console.log("  Start it with:  \x1b[33mollama serve\x1b[0m");
-    console.log("  Install guide:  https://ollama.ai\n");
-  } else {
-    printSuccess(`Ollama connected (${config.ollamaBaseUrl})`);
-  }
-
-  if (!chromaOk) {
-    printError(`ChromaDB is not reachable at ${config.chromaUrl}`);
-    console.log("  Start it with:  \x1b[33mchroma run --path ./chroma-data\x1b[0m");
-    console.log("  Install guide:  pip install chromadb\n");
-  } else {
-    printSuccess(`ChromaDB connected (${config.chromaUrl})`);
-  }
-
-  return ollamaOk && chromaOk;
-}
 
 // One LLM round-trip per chunk, so cap the batch.
 function capChunks(chunks: FileChunk[]): FileChunk[] {
@@ -84,11 +50,11 @@ async function main(): Promise<void> {
         : ` (${config.models.api[config.provider].model})`)
   );
 
-  const ready = await checkConnectivity();
+  const ready = await ensureServices();
   printSeparator();
 
   if (!ready) {
-    printError("One or more services are offline. Fix the above and retry.");
+    printError("Setup incomplete. Fix the above and retry.");
     process.exit(1);
   }
 

@@ -23,7 +23,15 @@ export const config = {
 
   ollamaBaseUrl: process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434",
   chromaUrl: process.env["CHROMA_URL"] ?? "http://localhost:8000",
+  chromaPath: process.env["CHROMA_PATH"] ?? "./chroma-data",
   projectPath: process.env["PROJECT_PATH"] ?? "./my-project",
+
+  autoStart: (process.env["AUTO_START"] ?? "true").toLowerCase() === "true",
+
+  autoStop: (process.env["AUTO_STOP"] ?? "true").toLowerCase() === "true",
+
+  autoPullModels:
+    (process.env["AUTO_PULL_MODELS"] ?? "false").toLowerCase() === "true",
 
   allowNewFiles:
     (process.env["ALLOW_NEW_FILES"] ?? "false").toLowerCase() === "true",

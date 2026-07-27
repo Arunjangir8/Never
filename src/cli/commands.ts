@@ -80,6 +80,10 @@ export async function handleCommand(input: string): Promise<boolean> {
       console.log(`  embeddings ${config.models.local.embedding}`);
       console.log(`  project    ${folderFileHandler.rootPath}`);
       console.log(`  chroma     ${config.chromaUrl} (${config.collectionName})`);
+      console.log(
+        `  autostart  ${config.autoStart ? "on" : "off"}` +
+          `, stop on exit ${config.autoStop ? "on" : "off"}`
+      );
       console.log(`  new files  ${config.allowNewFiles ? "allowed" : "blocked"}`);
       console.log(`  backups    ${config.backupBeforeWrite ? "on" : "off"}`);
       printSeparator();
