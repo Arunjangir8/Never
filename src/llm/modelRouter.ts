@@ -4,6 +4,7 @@ export interface ModelInput {
   provider: Provider;
   model: string;
   apiKey?: string;
+  baseUrl?: string;
 }
 
 const CODE_SIGNALS = [
@@ -45,5 +46,10 @@ export function getModel(type: "code" | "general"): ModelInput {
     );
   }
 
-  return { provider: config.provider, model: api.model, apiKey: api.apiKey };
+  return {
+    provider: config.provider,
+    model: api.model,
+    apiKey: api.apiKey,
+    ...("baseUrl" in api && api.baseUrl ? { baseUrl: api.baseUrl } : {}),
+  };
 }

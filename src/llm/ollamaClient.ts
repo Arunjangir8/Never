@@ -16,10 +16,15 @@ function makeClient(input: ModelInput, json = false) {
         ...(json ? { format: "json" as const } : {}),
       });
 
+    case "openrouter":
+    case "groq":
+    case "minimax":
     case "openai":
       return new ChatOpenAI({
         model: input.model,
         ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+        ...(input.baseUrl ? { configuration: { baseURL: input.baseUrl } } : {}),
+        ...(json ? { modelKwargs: { response_format: { type: "json_object" } } } : {}),
       });
 
     case "gemini":

@@ -2,7 +2,7 @@ import { readFile } from "fs/promises";
 import { resolve, isAbsolute, relative } from "path";
 import type { DirectFile } from "../types.js";
 
-const FILE_PATH_RE = /(?:^|\s)(\.{0,2}\/[\w./-]+\.\w+|[\w/-]+\/[\w./-]+\.\w+)/g;
+const FILE_PATH_RE = /(?:^|\s)((?:\.{0,2}\/)?[\w.-]+(?:\/[\w.-]+)*\.\w+)/g;
 
 export async function detectFilePaths(
   query: string,

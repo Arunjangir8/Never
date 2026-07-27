@@ -1,8 +1,23 @@
 import "dotenv/config";
 
-export type Provider = "local" | "openai" | "gemini" | "anthropic";
+export type Provider =
+  | "local"
+  | "openrouter"
+  | "groq"
+  | "minimax"
+  | "openai"
+  | "gemini"
+  | "anthropic";
 
-const PROVIDERS: Provider[] = ["local", "openai", "gemini", "anthropic"];
+const PROVIDERS: Provider[] = [
+  "local",
+  "openrouter",
+  "groq",
+  "minimax",
+  "openai",
+  "gemini",
+  "anthropic",
+];
 
 // Don't throw: imported at startup, so a throw here escapes main()'s catch.
 function readProvider(): Provider {
@@ -47,9 +62,27 @@ export const config = {
     },
 
     api: {
+      openrouter: {
+        apiKey: process.env["OPENROUTER_API_KEY"] ?? "",
+        model: process.env["OPENROUTER_MODEL"] ?? "deepseek/deepseek-r1:free",
+        baseUrl:
+          process.env["OPENROUTER_BASE_URL"] ?? "https://openrouter.ai/api/v1",
+      },
+      groq: {
+        apiKey: process.env["GROQ_API_KEY"] ?? "",
+        model: process.env["GROQ_MODEL"] ?? "llama-3.3-70b-versatile",
+        baseUrl:
+          process.env["GROQ_BASE_URL"] ?? "https://api.groq.com/openai/v1",
+      },
+      minimax: {
+        apiKey: process.env["MINIMAX_API_KEY"] ?? "",
+        model: process.env["MINIMAX_MODEL"] ?? "MiniMax-M2.5",
+        baseUrl: process.env["MINIMAX_BASE_URL"] ?? "https://api.minimax.io/v1",
+      },
       openai: {
         apiKey: process.env["OPENAI_API_KEY"] ?? "",
         model: process.env["OPENAI_MODEL"] ?? "gpt-4o-mini",
+        baseUrl: process.env["OPENAI_BASE_URL"] ?? "",
       },
       gemini: {
         apiKey: process.env["GEMINI_API_KEY"] ?? "",
