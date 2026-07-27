@@ -1,17 +1,23 @@
 import { getContext } from "../retriever/index.js";
 import { detectQueryType, getModel } from "../llm/modelRouter.js";
-import { buildSystemPrompt, buildGeneralSystemPrompt, buildUserPrompt } from "../llm/promptBuilder.js";
+import { buildGeneralSystemPrompt, buildUserPrompt } from "../llm/promptBuilder.js";
 import { streamResponse } from "../llm/ollamaClient.js";
-import { parseUpdates } from "./updateParser.js";
+import { planTasks, runTask } from "./subtasks.js";
 import {
   printSources,
   printSeparator,
   printError,
-  printBlueFindings,
+  printPlan,
+  printTaskHeader,
+  printRunSummary,
+  printDiff,
+  spinner,
+  type TaskState,
 } from "../cli/display.js";
-import { askUserPermission } from "../cli/prompt.js";
+import { askChoice } from "../cli/prompt.js";
 import { applyUpdates } from "./applyUpdates.js";
 import { folderFileHandler } from "../utils/folderFileHandler.js";
+import type { SubTask } from "../types.js";
 
 import { StateGraph, END, START, Annotation } from "@langchain/langgraph";
 
@@ -23,6 +29,7 @@ const AgentState = Annotation.Root({
   context:      Annotation<string>({ default: () => "", reducer: (_, v) => v }),
   sources:      Annotation<string[]>({ default: () => [], reducer: (_, v) => v }),
   queryType:    Annotation<QueryType>({ default: () => "general", reducer: (_, v) => v }),
+  tasks:        Annotation<SubTask[]>({ default: () => [], reducer: (_, v) => v }),
   fullResponse: Annotation<string>({ default: () => "", reducer: (_, v) => v }),
   error:        Annotation<string | null>({ default: () => null, reducer: (_, v) => v }),
 });
@@ -54,20 +61,19 @@ async function routeQuery(state: AgentStateType): Promise<Partial<AgentStateType
   return { queryType };
 }
 
-// Node 3: stream the LLM response token by token
+// Node 3a (general queries only): stream a conversational answer
 async function streamLLMResponse(state: AgentStateType): Promise<Partial<AgentStateType>> {
   process.stdout.write("\n\x1b[1mOptimus:\x1b[0m ");
 
-  const systemPrompt =
-    state.queryType === "general"
-      ? buildGeneralSystemPrompt()
-      : buildSystemPrompt(state.context);
-
-  const model = getModel(state.queryType);
+  const model = getModel("general");
   let fullResponse = "";
 
   try {
-    for await (const token of streamResponse(systemPrompt, buildUserPrompt(state.userQuery), model)) {
+    for await (const token of streamResponse(
+      buildGeneralSystemPrompt(),
+      buildUserPrompt(state.userQuery),
+      model
+    )) {
       process.stdout.write(token);
       fullResponse += token;
     }
@@ -81,24 +87,94 @@ async function streamLLMResponse(state: AgentStateType): Promise<Partial<AgentSt
   return { fullResponse };
 }
 
-// Node 4: parse LLM output and apply file changes
-async function parseAndApply(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  const updates = parseUpdates(state.fullResponse);
-  if (updates.length === 0) return {};
+// Node 3b: split the request into file-sized subtasks
+async function planNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
+  const spin = spinner("Planning subtasks…");
 
-  // Always show the change and ask before writing.
-  printBlueFindings(updates);
-
-  const approved = await askUserPermission(
-    `\n\x1b[33mApply ${updates.length} change(s) to ${folderFileHandler.rootPath}? (y/n): \x1b[0m`
-  );
-
-  if (!approved) {
-    console.log("\n\x1b[2mDiscarded. No files were changed.\x1b[0m");
-    return {};
+  let tasks: SubTask[] = [];
+  try {
+    tasks = await planTasks(state.userQuery, state.context);
+  } catch (err) {
+    spin.stop();
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  spin.stop();
+  if (tasks.length === 0) {
+    tasks = [{ file: "", action: "edit", goal: state.userQuery }];
+    console.log("\x1b[2mPlanner returned no plan — running as a single task.\x1b[0m");
+  } else {
+    printPlan(tasks);
   }
 
-  applyUpdates(updates);
+  return { tasks };
+}
+
+const CHOICES = ["y", "s", "a", "q"] as const;
+const PROMPT =
+  "\x1b[33m  apply this change?\x1b[0m \x1b[2m[y]es (default) / [s]kip / [a]ll remaining / [q]uit:\x1b[0m ";
+
+function currentContent(relativePath: string): string | null {
+  try {
+    return folderFileHandler.readFile(relativePath);
+  } catch {
+    return null;
+  }
+}
+
+// Node 4: run the tasks one at a time, reviewing and writing each change
+async function executeTasks(state: AgentStateType): Promise<Partial<AgentStateType>> {
+  const { tasks } = state;
+  const states: TaskState[] = tasks.map(() => "pending");
+  let applyAll = false;
+
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i]!;
+    printTaskHeader(i, tasks.length, task, states);
+
+    const spin = spinner(`Working on ${task.file || "the request"}…`);
+    let updates;
+    try {
+      updates = await runTask(task, state.userQuery, state.context);
+    } catch (err) {
+      spin.stop();
+      printError(err instanceof Error ? err.message : String(err));
+      states[i] = "failed";
+      continue;
+    }
+    spin.stop();
+
+    if (updates.length === 0) {
+      printError(`No usable change produced for ${task.file || "this task"}.`);
+      states[i] = "failed";
+      continue;
+    }
+
+    let appliedHere = 0;
+    let quit = false;
+
+    for (const update of updates) {
+      printDiff(update, update.type === "createNew" ? null : currentContent(update.relativePath));
+
+      if (!applyAll) {
+        const answer = await askChoice(PROMPT, CHOICES);
+        if (answer === "q") { quit = true; break; }
+        if (answer === "s") { console.log("\x1b[2m  skipped.\x1b[0m"); continue; }
+        if (answer === "a") applyAll = true;
+      }
+
+      const { ok } = applyUpdates([update]);
+      appliedHere += ok;
+    }
+
+    states[i] = appliedHere > 0 ? "done" : "skipped";
+
+    if (quit) {
+      console.log("\n\x1b[2mStopped. Remaining steps were not run.\x1b[0m");
+      break;
+    }
+  }
+
+  printRunSummary(states);
   return {};
 }
 
@@ -118,11 +194,13 @@ function shouldContinueAfterRetrieval(state: AgentStateType): string {
   return "route_query";
 }
 
-// Decide what to do after streaming
-function shouldContinueAfterStream(state: AgentStateType): string {
-  if (state.error) return "handle_error";
-  if (state.queryType === "general") return END;
-  return "parse_and_apply";
+// General questions get a streamed answer, code requests get the plan pipeline
+function routeAfterQueryType(state: AgentStateType): string {
+  return state.queryType === "general" ? "stream_llm" : "plan_tasks";
+}
+
+function shouldContinueAfterPlan(state: AgentStateType): string {
+  return state.error ? "handle_error" : "execute_tasks";
 }
 
 // Build and compile the graph
@@ -130,7 +208,8 @@ const graph = new StateGraph(AgentState)
   .addNode("retrieve_context", retrieveContext)
   .addNode("route_query",      routeQuery)
   .addNode("stream_llm",       streamLLMResponse)
-  .addNode("parse_and_apply",  parseAndApply)
+  .addNode("plan_tasks",       planNode)
+  .addNode("execute_tasks",    executeTasks)
   .addNode("handle_error",     handleError)
 
   .addEdge(START, "retrieve_context")
@@ -138,14 +217,20 @@ const graph = new StateGraph(AgentState)
     route_query:  "route_query",
     handle_error: "handle_error",
   })
-  .addEdge("route_query", "stream_llm")
-  .addConditionalEdges("stream_llm", shouldContinueAfterStream, {
-    parse_and_apply: "parse_and_apply",
-    handle_error:    "handle_error",
-    [END]:           END,
+  .addConditionalEdges("route_query", routeAfterQueryType, {
+    stream_llm: "stream_llm",
+    plan_tasks: "plan_tasks",
   })
-  .addEdge("parse_and_apply", END)
-  .addEdge("handle_error",    END)
+  .addConditionalEdges("plan_tasks", shouldContinueAfterPlan, {
+    execute_tasks: "execute_tasks",
+    handle_error:  "handle_error",
+  })
+  .addConditionalEdges("stream_llm", (s: AgentStateType) => (s.error ? "handle_error" : END), {
+    handle_error: "handle_error",
+    [END]:        END,
+  })
+  .addEdge("execute_tasks", END)
+  .addEdge("handle_error",  END)
   .compile();
 
 // Entry point

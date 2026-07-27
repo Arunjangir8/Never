@@ -8,6 +8,12 @@ export type FileUpdate =
   | { type: "patchs"; relativePath: string; patches: PatchEntry[]; summary: string }
   | { type: "createNew"; relativePath: string; content: string; summary: string };
 
+export interface SubTask {
+  file: string;
+  action: "edit" | "create";
+  goal: string;
+}
+
 export interface QueryResult {
   filePath: string;
   content: string;

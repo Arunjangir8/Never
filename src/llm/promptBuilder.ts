@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { FileChunk, RedFinding } from "../types.js";
+import { FileChunk, RedFinding, SubTask } from "../types.js";
 
 // Patches need an exact byte-for-byte snippet match. Small local models
 // can't do that, so they only get the whole-file update types.
@@ -79,6 +79,71 @@ ${schemaBlock()}
 
 FILE CONTEXT:
 ${context}`;
+}
+
+
+export function buildPlannerSystemPrompt(context: string): string {
+  return `You are a planning agent for a coding assistant. Split the user's request
+into the smallest set of file-level subtasks. You never write code.
+
+Output ONLY valid JSON. No markdown, no code fences, no explanation:
+{ "tasks": [ { "file": "<relative path>", "action": "edit" | "create", "goal": "<one imperative sentence>" } ] }
+
+RULES:
+- One task per file. NEVER list the same file twice.
+- Only files that must actually change. If one file is enough, return exactly one task.
+- "file" must be a path that appears in FILE CONTEXT, unless action is "create".
+- Never invent paths and never use placeholders like <path> or path/to/file.ts.
+- "goal" must be self-contained: the worker sees ONLY that one file and this sentence.
+- Order tasks so files that others depend on come first.
+- Maximum 6 tasks.
+
+FILE CONTEXT:
+${context}`;
+}
+
+export function buildPlannerUserPrompt(query: string): string {
+  return `Request:
+${query}
+
+Return ONLY the JSON plan. No explanation.`;
+}
+
+export function buildTaskSystemPrompt(task: SubTask, fileContext: string): string {
+  const scope =
+    task.action === "create"
+      ? `You are creating ONE new file: "${task.file}".`
+      : `You are editing ONE existing file: "${task.file}".`;
+
+  return `You are a coding agent working on a single subtask.
+${scope}
+
+STRICT RULES:
+- Output ONLY valid JSON. No markdown, no code fences, no explanation.
+- The JSON must contain EXACTLY ONE top-level key: "${task.file}"
+- Touch no other file. Do nothing beyond the subtask goal.
+
+${updateTypeRules()}
+
+STRING RULES:
+- Escape newlines as \\n
+- Escape quotes as \\"
+
+${schemaBlock()}
+
+FILE CONTEXT:
+${fileContext}`;
+}
+
+export function buildTaskUserPrompt(task: SubTask, originalQuery: string): string {
+  return `Original request (for background only): ${originalQuery}
+
+Your subtask — do this and nothing else:
+${task.goal}
+
+Target file: ${task.file}
+
+Return ONLY the JSON. No explanation. No markdown.`;
 }
 
 export function buildGeneralSystemPrompt(): string {
