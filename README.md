@@ -6,6 +6,10 @@ machine via Ollama. No API keys, no data leaving your laptop.
 
 It can also **edit files** — always after showing you the change and asking.
 
+Local is the default, not the limit: one `PROVIDER=` switch points it at
+OpenRouter, Groq, MiniMax, OpenAI, Gemini or Anthropic instead. Embeddings
+stay local either way.
+
 ---
 
 ## Quickstart
@@ -79,8 +83,8 @@ Optimus pulls these on first run if you approve:
 | Model | Size | Used for |
 |---|---|---|
 | `nomic-embed-text` | ~274 MB | Embeddings. Always needed, even on a hosted provider. |
-| `gemma:2b` | ~1.7 GB | Chat and explanations |
-| `qwen2.5-coder:7b` | ~4.7 GB | Code edits and the bug-fixer |
+| `gemma:2b` | ~1.7 GB | Chat and explanations. Only checked when `PROVIDER=local`. |
+| `qwen2.5-coder:7b` | ~4.7 GB | Code edits and the bug-fixer. Only checked when `PROVIDER=local`. |
 
 ---
 
@@ -90,7 +94,7 @@ Every variable has a working default. You normally only touch `PROJECT_PATH`.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `PROVIDER` | `local` | `local` \| `openai` \| `gemini` \| `anthropic` |
+| `PROVIDER` | `local` | `local` \| `openrouter` \| `groq` \| `minimax` \| `openai` \| `gemini` \| `anthropic`. An unknown value warns and falls back to `local`. |
 | `PROJECT_PATH` | `./my-project` | Folder Optimus reads and edits. Hard boundary. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
 | `CHROMA_URL` | `http://localhost:8000` | ChromaDB server |
@@ -101,16 +105,41 @@ Every variable has a working default. You normally only touch `PROJECT_PATH`.
 | `COLLECTION_NAME` | `optimus_codebase` | ChromaDB collection |
 | `TOP_K` | `5` | Chunks retrieved per query |
 | `LOCAL_GENERAL_MODEL` | `gemma:2b` | Used for explanations and chat |
-| `LOCAL_CODE_MODEL` | `qwen2.5-coder:7b` | Used for code edits and the bug-fixer |
+| `LOCAL_CODE_MODEL` | `qwen2.5-coder:7b` | Used for code edits and the bug-fixer. That's the `.env.example` value; with no `.env` at all the built-in fallback is `codellama:7b-instruct`. |
 | `LOCAL_EMBED_MODEL` | `nomic-embed-text` | Embeddings. Always local. |
 | `ALLOW_NEW_FILES` | `false` | Let the model create files that don't exist |
 | `BACKUP_BEFORE_WRITE` | `true` | Write `<file>.optimus.bak` before overwriting |
 | `MAX_DEBUG_CHUNKS` | `10` | Cap on chunks per `npm run debug` run |
 | `WATCH_AUTOFIX` | `false` | Run the bug-fixer on every save in watch mode |
 
-To use a hosted model instead, set `PROVIDER=openai` (or `gemini` / `anthropic`)
-and the matching `*_API_KEY`. Put real keys in `.env` only — it is gitignored.
-`.env.example` must stay placeholder-only.
+### Hosted providers
+
+Set `PROVIDER` to one of these and fill in its key. Nothing else changes —
+retrieval, indexing and the safety rails work the same.
+
+| `PROVIDER` | Key | Model var (default) | Notes |
+|---|---|---|---|
+| `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL` (`deepseek/deepseek-r1:free`) | One key, most open models. Free ones end in `:free`. |
+| `groq` | `GROQ_API_KEY` | `GROQ_MODEL` (`llama-3.3-70b-versatile`) | Fastest, largest free tier. |
+| `minimax` | `MINIMAX_API_KEY` | `MINIMAX_MODEL` (`MiniMax-M2.5`) | Has a $0 tier. |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` (`gpt-4o-mini`) | Paid. Set `OPENAI_BASE_URL` only for a different compatible host. |
+| `gemini` | `GEMINI_API_KEY` | `GEMINI_MODEL` (`gemini-2.0-flash`) | |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` (`claude-3-haiku-20240307`) | Paid. |
+
+OpenRouter, Groq, MiniMax and OpenAI all speak the OpenAI protocol and share
+one client; each carries its own `*_BASE_URL` (already defaulted), so
+`PROVIDER=` is the only switch you touch. Gemini and Anthropic use their own
+clients.
+
+Two things stay local no matter the provider: **embeddings** always run through
+Ollama (`nomic-embed-text`), and only `local` swaps model by query type — a
+hosted provider uses its one model for both chat and code.
+
+A hosted provider with no key set fails at query time with an explicit
+`Set <PROVIDER>_API_KEY in .env, or use PROVIDER=local`, not a silent fallback.
+
+Put real keys in `.env` only — it is gitignored. `.env.example` must stay
+placeholder-only.
 
 ---
 
@@ -122,6 +151,7 @@ npm run index            # index PROJECT_PATH into ChromaDB
 npm run watch            # index, then re-index on every save
 npm run debug -- <file>  # run the Red/Blue bug-fixer on one file
 npm run debug            # run it across the project (slow — see note below)
+npm run dev -- --help    # modes and where config lives
 
 npm test                 # unit tests
 npm run typecheck        # tsc --noEmit
@@ -154,9 +184,13 @@ npm run build && npm start
    - `createNew` — create a file (needs `ALLOW_NEW_FILES=true`)
    - `patchs` — find/replace (**hosted providers only**; local models can't
      reproduce a snippet byte-for-byte reliably enough to be safe)
-4. Optimus prints each proposed change and **asks before writing anything**.
-5. On approval it backs up each file to `<file>.optimus.bak`, then writes.
-6. `/revert <file>` restores the backup.
+4. The parser repairs what small models get wrong on the way out — fenced
+   blocks, trailing prose, raw newlines and bad escapes inside strings — so a
+   nearly-valid response still lands as updates instead of an error
+   (`src/agent/updateParser.ts`, covered by `updateParser.test.ts`).
+5. Optimus prints each proposed change and **asks before writing anything**.
+6. On approval it backs up each file to `<file>.optimus.bak`, then writes.
+7. `/revert <file>` restores the backup.
 
 Nothing outside `PROJECT_PATH` can be touched, and a patch that matches zero or
 more than one place in a file is rejected rather than guessed at.
