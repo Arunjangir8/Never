@@ -42,6 +42,65 @@ function fixLLMEscapes(text: string): string {
   return text.replace(/\\\\"/g, '\\\\\\"');
 }
 
+const VALID_ESCAPES = new Set(['"', "\\", "/", "b", "f", "n", "r", "t"]);
+
+function fixInvalidEscapes(text: string): string {
+  let result = "";
+  let inString = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+
+    if (!inString) {
+      if (ch === '"') inString = true;
+      result += ch;
+      continue;
+    }
+
+    if (ch === '"') { inString = false; result += ch; continue; }
+
+    if (ch === "\\") {
+      const next = text[i + 1];
+      if (next === undefined) { result += ch; continue; }
+      if (VALID_ESCAPES.has(next)) { result += ch + next; i++; continue; }
+      if (next === "u" && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+        result += text.slice(i, i + 6);
+        i += 5;
+        continue;
+      }
+      result += next;
+      i++;
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+function closeTruncated(text: string): string | null {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\" && inString) { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") stack.pop();
+  }
+
+  if (inString || stack.length === 0) return null;
+  if (!/[}\]]$/.test(text.trimEnd())) return null;
+
+  return text + stack.reverse().join("");
+}
+
 // Pull JSON out of an LLM reply. Tries each candidate until one parses,
 // because small models add fences, prose, raw newlines and bad escapes.
 export function tryParseJson(text: string): unknown | null {
@@ -73,9 +132,32 @@ export function tryParseJson(text: string): unknown | null {
       sanitizeJson(fixed),
       replaceBackticks(fixed),
       sanitizeJson(replaceBackticks(fixed)),
+      fixInvalidEscapes(raw),
+      sanitizeJson(fixInvalidEscapes(raw)),
+      fixInvalidEscapes(sanitizeJson(raw)),
     ];
     for (const attempt of attempts) {
       try { return JSON.parse(attempt); } catch { }
+    }
+  }
+
+  for (const raw of candidates) {
+    for (const base of [
+      raw,
+      sanitizeJson(raw),
+      fixInvalidEscapes(raw),
+      sanitizeJson(fixInvalidEscapes(raw)),
+    ]) {
+      const closed = closeTruncated(base);
+      if (!closed) continue;
+      try {
+        const parsed: unknown = JSON.parse(closed);
+        console.warn(
+          "⚠ Response was cut off at the model's output limit — recovered the " +
+            "complete files. Ask for fewer files per request to avoid this."
+        );
+        return parsed;
+      } catch { }
     }
   }
 

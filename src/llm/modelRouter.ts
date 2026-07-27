@@ -8,9 +8,10 @@ export interface ModelInput {
 }
 
 const CODE_SIGNALS = [
-  "fix", "write", "implement", "refactor", "debug", "create function",
+  "fix", "write", "implement", "refactor", "debug", "create", "scaffold",
   "update", "add feature", "error in", "bug", "generate", "build",
-  "edit", "change", "modify", "complete", "finish", "add", "code"
+  "edit", "change", "modify", "complete", "finish", "add", "code",
+  "rename", "delete", "remove", "rewrite", "setup", "set up"
 ];
 
 const GENERAL_SIGNALS = [
@@ -19,10 +20,18 @@ const GENERAL_SIGNALS = [
   "hello", "hi", "hey", "thanks", "thank you", "who are you", "what are you",
 ];
 
+function compile(signals: string[]): RegExp {
+  const alts = signals.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`\\b(?:${alts.join("|")})\\b`);
+}
+
+const CODE_RE = compile(CODE_SIGNALS);
+const GENERAL_RE = compile(GENERAL_SIGNALS);
+
 export function detectQueryType(query: string): "code" | "general" {
   const lower = query.toLowerCase();
-  if (CODE_SIGNALS.some((s) => lower.includes(s))) return "code";
-  if (GENERAL_SIGNALS.some((s) => lower.includes(s))) return "general";
+  if (CODE_RE.test(lower)) return "code";
+  if (GENERAL_RE.test(lower)) return "general";
   return "general";
 }
 

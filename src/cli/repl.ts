@@ -1,6 +1,7 @@
 import readline from "readline";
 import { runQuery } from "../agent/orchestrator.js";
 import { handleCommand } from "./commands.js";
+import { setReplInterface } from "./prompt.js";
 import { printSeparator, printError } from "./display.js";
 
 const PROMPT = "\x1b[36moptimus\x1b[0m \x1b[1m❯\x1b[0m ";
@@ -18,6 +19,7 @@ export async function startRepl(): Promise<void> {
     prompt: PROMPT,
     historySize: 50,
   });
+  setReplInterface(rl);
 
   rl.on("SIGINT", () => {
     console.log("\n\nUse /exit to quit.");
@@ -42,4 +44,6 @@ export async function startRepl(): Promise<void> {
 
     rl.prompt();
   }
+
+  setReplInterface(null);
 }
